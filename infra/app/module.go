@@ -34,8 +34,14 @@ func Module() fx.Option {
 			loadConfig,
 			newLogger,
 			newBot,
-			newTelegramHTTP,
-			newGeminiHTTP,
+			fx.Annotate(
+				newTelegramHTTP,
+				fx.ResultTags(`name:"telegramHTTP"`),
+			),
+			fx.Annotate(
+				newGeminiHTTP,
+				fx.ResultTags(`name:"geminiHTTP"`),
+			),
 			newPool,
 			provideUserRepo,
 			provideAppointmentRepo,
@@ -49,7 +55,10 @@ func Module() fx.Option {
 			provideListForDoctor,
 			newAuthHandler,
 			newAppointmentHandler,
-			newRouterParams,
+			fx.Annotate(
+				newRouterParams,
+				fx.ParamTags(``, ``, ``, ``, ``, ``, `name:"telegramHTTP"`, `name:"geminiHTTP"`),
+			),
 			newGinEngine,
 			newHTTPServer,
 		),
