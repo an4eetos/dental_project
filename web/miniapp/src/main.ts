@@ -11,10 +11,11 @@ import { clearToken, loadToken, saveToken } from "./storage";
 
 const tg = window.Telegram?.WebApp;
 
-const app = document.getElementById("app");
-if (!app) {
+const appRoot = document.getElementById("app");
+if (!appRoot) {
   throw new Error("root element #app not found");
 }
+const app: HTMLElement = appRoot;
 
 function el(tag: string, className?: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -122,11 +123,13 @@ function renderBookingForm(token: string): void {
   timeInput.required = true;
   timeInput.min = "09:00";
   timeInput.max = "20:00";
-  timeInput.step = 60;
+  timeInput.step = "60";
   timeInput.className = "input";
 
-  const submit = el("button", "button primary", "Отправить заявку");
+  const submit = document.createElement("button");
   submit.type = "submit";
+  submit.className = "button primary";
+  submit.textContent = "Отправить заявку";
 
   const status = el("p", "status hidden");
 
@@ -171,8 +174,10 @@ function renderBookingForm(token: string): void {
 
 function renderDoctorDashboard(token: string): void {
   const listHost = el("div", "list-host");
-  const refresh = el("button", "button primary", "Обновить");
+  const refresh = document.createElement("button");
   refresh.type = "button";
+  refresh.className = "button primary";
+  refresh.textContent = "Обновить";
 
   const load = async () => {
     listHost.replaceChildren(el("p", "status", "Загрузка…"));
