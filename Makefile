@@ -1,4 +1,4 @@
-.PHONY: run build test tidy docker-build docker-up docker-down lint fmt
+.PHONY: run build test tidy docker-build docker-up docker-down lint fmt miniapp-install miniapp-dev miniapp-build
 
 run:
 	go run ./cmd/teeth-bot
@@ -21,6 +21,15 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+miniapp-install:
+	cd web/miniapp && npm install
+
+miniapp-dev:
+	cd web/miniapp && npm run dev
+
+miniapp-build:
+	cd web/miniapp && npm run build
 
 fmt:
 	go fmt ./...

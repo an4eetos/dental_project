@@ -1,18 +1,45 @@
-# Teeth photo bot (Telegram + Gemini Vision)
+# Teeth photo bot + Telegram Mini App (Go + Gemini)
 
-Go service that receives Telegram **webhook** updates, downloads tooth photos, optionally resizes them, sends them to the **Google Gemini** API for **informational** analysis, and replies in Telegram.
+Go service that:
 
-**Important:** This project is intentionally **non-diagnostic**. Bot replies must be treated as **general information only**, not medical or dental advice.
+- Receives Telegram **webhook** updates, analyzes tooth photos with **Google Gemini**, and replies in Russian.
+- Exposes a **REST API** for Telegram Mini App **authentication** (initData HMAC) and **appointment booking** (PostgreSQL).
+
+**Important:** Analysis is **non-diagnostic**. Bot and Mini App text must not be treated as medical advice.
 
 ## Features
 
-- Telegram Bot API via **webhooks** (no long polling)
-- Image download + resize/compress (JPEG) before Gemini
-- Gemini structured JSON (`application/json`) mapped to a fixed schema
-- `gin` HTTP server with middleware (request ID, structured logging, recovery, optional webhook secret)
-- Context timeouts on outbound HTTP (Telegram file fetch + Gemini)
-- Docker / Docker Compose for local runs
-- Environment-based configuration (`godotenv` loads `.env` when present)
+### Telegram bot (webhook)
+
+- Image download, resize, Gemini structured JSON analysis
+- Russian user messages (`/start`, help, errors)
+
+### Mini App API
+
+- `POST /auth/telegram` — validate Telegram `initData`, upsert user, issue JWT
+- `POST /appointments` — book a slot (authenticated)
+- `GET /appointments/me` — list own appointments (patients)
+- `GET /appointments` — list all appointments with patient info (**doctors only**)
+
+### Architecture
+
+Clean / screaming architecture:
+
+```
+cmd/teeth-bot/          # fx bootstrap only
+infra/                  # config, HTTP router, PostgreSQL pool + migrations
+internal/
+  domain/               # User, Appointment, typed errors
+  port/                 # Repository & auth interfaces
+  usecase/              # Telegram login, create/list appointments
+  service/              # Date/time validation rules
+  adapters/
+    driving/http/       # Gin handlers, JWT middleware, DTO converters
+    driven/             # Postgres, JWT, Telegram initData validator
+web/miniapp/            # TypeScript Telegram Mini App UI (Russian)
+```
+
+See [docs/API.md](docs/API.md) for request/response examples.
 
 ## Configuration
 
@@ -21,100 +48,78 @@ Copy `.env.example` to `.env` and fill in secrets.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | yes | From [@BotFather](https://t.me/BotFather) |
-| `GEMINI_API_KEY` | yes | Google AI Studio / Gemini API key |
-| `GEMINI_MODEL` | no | Default `gemini-1.5-flash` (vision-capable) |
-| `TELEGRAM_WEBHOOK_SECRET` | no | If set, Telegram must send matching `X-Telegram-Bot-Api-Secret-Token` |
+| `GEMINI_API_KEY` | yes | Gemini API key |
+| `DATABASE_URL` | yes | PostgreSQL DSN |
+| `JWT_SECRET` | yes | HS256 secret, **min 32 chars** |
+| `JWT_TTL` | no | Access token lifetime (default `24h`) |
+| `TELEGRAM_AUTH_MAX_AGE` | no | Max initData age (default `24h`) |
+| `CORS_ALLOW_ORIGINS` | no | Comma-separated origins for Mini App dev |
+| `DOCTOR_TELEGRAM_IDS` | no | Comma-separated Telegram user IDs granted doctor role |
+| `TELEGRAM_WEBHOOK_SECRET` | no | Webhook `X-Telegram-Bot-Api-Secret-Token` |
 | `HTTP_ADDR` | no | Default `:8080` |
-| `REQUEST_TIMEOUT` | no | Per-webhook processing timeout (default `55s`) |
-| `GEMINI_HTTP_TIMEOUT` | no | Gemini HTTP client timeout (default `60s`) |
-| `TELEGRAM_DOWNLOAD_TIMEOUT` | no | Telegram file download timeout (default `30s`) |
-| `MAX_IMAGE_DIMENSION` | no | Longest edge after resize (default `1024`) |
-| `LOG_LEVEL` | no | `info` or `debug` |
+| `GEMINI_MODEL` | no | Default `gemini-1.5-flash` |
 
 ## Local development
 
-### Prerequisites
-
-- Go 1.22+
-- Docker (optional, for Compose)
-- A **public HTTPS URL** for Telegram to call your webhook (use ngrok, Cloudflare Tunnel, or deploy to a host with TLS)
-
-### Run with Go
+### Backend + database
 
 ```bash
 cp .env.example .env
-# edit .env
+# set TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, JWT_SECRET (32+ chars)
+
+docker compose up -d postgres
 make tidy
 make run
 ```
 
-Expose HTTPS locally (example with ngrok):
+Migrations run automatically on startup (`infra/postgresql/migrations`).
 
-```bash
-ngrok http 8080
-```
+Health: `GET /health`.
 
-Register the webhook (replace values):
+### Telegram webhook
+
+Expose HTTPS (ngrok / tunnel) and register:
 
 ```bash
 export BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
-export PUBLIC_BASE="https://YOUR-NGROK-SUBDOMAIN.ngrok-free.app"
+export PUBLIC_BASE="https://YOUR-TUNNEL.example"
 
 curl -fsS "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
   -d "url=${PUBLIC_BASE}/webhook" \
-  -d "secret_token=YOUR_SECRET_IF_USING_TELEGRAM_WEBHOOK_SECRET"
+  -d "secret_token=YOUR_SECRET_IF_SET"
 ```
 
-If you set `TELEGRAM_WEBHOOK_SECRET` in `.env`, pass the same value as `secret_token` here.
+### Mini App (frontend)
 
-Health check: `GET /health`.
+```bash
+cd web/miniapp
+cp .env.example .env
+# VITE_API_BASE_URL=http://localhost:8080
+npm install
+npm run dev
+```
 
-### Run with Docker Compose
+In [@BotFather](https://t.me/BotFather), set the bot **Menu Button** / Web App URL to your hosted Mini App (HTTPS). For local dev, use a tunnel to Vite (`5173`) and add that origin to `CORS_ALLOW_ORIGINS`.
+
+The Mini App sends `Telegram.WebApp.initData` to `POST /auth/telegram` and uses the returned JWT for appointment endpoints.
+
+### Full stack with Docker Compose
 
 ```bash
 cp .env.example .env
-# edit .env
 make docker-up
 ```
 
-Map your tunnel to `localhost:${HOST_PORT:-8080}` and `setWebhook` as above.
+## Makefile
 
-## Expected Gemini JSON shape
+| Target | Description |
+|--------|-------------|
+| `make run` | Run API + bot webhook |
+| `make build` | Build `bin/teeth-bot` |
+| `make test` | Unit tests |
+| `make miniapp-dev` | Vite dev server for Mini App |
+| `make docker-up` | Compose: Postgres + API |
 
-The prompt asks Gemini to return JSON only:
+## Safety
 
-```json
-{
-  "visible_issues": ["possible plaque buildup"],
-  "confidence": "low",
-  "recommendations": ["brush twice daily"],
-  "disclaimer": "This is not medical advice."
-}
-```
-
-Replies to users include an explicit **informational-only / not medical advice** disclaimer.
-
-## Project layout
-
-```
-cmd/teeth-bot/main.go          # HTTP server bootstrap
-internal/config                # Env configuration
-internal/handler               # Webhook + formatting
-internal/gemini                # Gemini REST client
-internal/imageproc             # Resize/compress
-internal/middleware            # Gin middleware
-internal/model                 # Shared structs
-internal/port                  # Interfaces for testing/mocking
-internal/telegrambot           # Telegram download + send
-```
-
-## Makefile targets
-
-- `make run` — `go run ./cmd/teeth-bot`
-- `make build` — binary to `bin/teeth-bot`
-- `make test` — unit tests
-- `make docker-up` / `make docker-down` — Compose
-
-## Safety & compliance note
-
-This bot must **not** be presented as a diagnostic tool. Operators are responsible for consent, privacy (health-adjacent photos), retention policies, and compliance with Telegram/Google terms.
+Operators are responsible for consent, privacy (health-adjacent photos), retention, and compliance with Telegram/Google terms. Appointment booking does not replace clinic scheduling systems until integrated.

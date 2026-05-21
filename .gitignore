@@ -1,5 +1,7 @@
 /bin/
 /dist/
+web/miniapp/node_modules/
+web/miniapp/dist/
 .env
 *.pem
 .DS_Store
