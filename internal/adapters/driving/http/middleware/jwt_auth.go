@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -70,7 +71,10 @@ func MustRole(c *gin.Context) (identity.Role, bool) {
 }
 
 // CORS allows configured origins for the Mini App.
-func CORS(allowOrigins []string) gin.HandlerFunc {
+func CORS(log *slog.Logger, allowOrigins []string) gin.HandlerFunc {
+	if log == nil {
+		log = slog.Default()
+	}
 	allowAll := len(allowOrigins) == 0
 	allowed := make(map[string]struct{}, len(allowOrigins))
 	for _, o := range allowOrigins {
@@ -79,17 +83,34 @@ func CORS(allowOrigins []string) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
+		originAllowed := origin == "" || allowAll
 		if origin != "" {
 			if allowAll {
 				c.Header("Access-Control-Allow-Origin", origin)
+				originAllowed = true
 			} else if _, ok := allowed[origin]; ok {
 				c.Header("Access-Control-Allow-Origin", origin)
+				originAllowed = true
+			} else {
+				log.Warn("cors: origin not allowed",
+					"origin", origin,
+					"method", c.Request.Method,
+					"path", c.Request.URL.Path,
+					"allowed", allowOrigins,
+				)
 			}
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {
+			if origin != "" {
+				log.Debug("cors: preflight",
+					"origin", origin,
+					"path", c.Request.URL.Path,
+					"allowed", originAllowed,
+				)
+			}
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}

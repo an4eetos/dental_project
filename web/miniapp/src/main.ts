@@ -1,5 +1,6 @@
 import {
   ApiError,
+  apiBaseUrl,
   authTelegram,
   createAppointment,
   listAllAppointments,
@@ -76,9 +77,12 @@ function renderLoading(message: string): void {
   );
 }
 
-function renderError(message: string): void {
+function renderError(message: string, hint?: string): void {
   const box = el("div", "card error");
   box.append(el("p", undefined, message));
+  if (hint) {
+    box.append(el("p", "muted", hint));
+  }
   renderShell(box, "Запись на приём", "Стоматологический AI-ассистент");
 }
 
@@ -248,6 +252,13 @@ async function bootstrap(): Promise<void> {
   tg?.ready();
   tg?.expand();
 
+  const apiHint = `API: ${apiBaseUrl()}`;
+  console.info("[miniapp] bootstrap", {
+    api: apiBaseUrl(),
+    hasInitData: Boolean(tg?.initData),
+    platform: tg?.platform,
+  });
+
   renderLoading("Авторизация…");
 
   try {
@@ -258,12 +269,20 @@ async function bootstrap(): Promise<void> {
     }
     renderBookingForm(auth.access_token);
   } catch (err) {
+    console.error("[miniapp] auth failed", err);
     if (err instanceof ApiError) {
       clearToken();
-      renderError(err.message);
+      const hint =
+        err.status === 0
+          ? `${apiHint}. Запрос не дошёл до бэкенда — проверьте туннель и CORS_ALLOW_ORIGINS.`
+          : `${apiHint} · HTTP ${err.status}${err.code ? ` · ${err.code}` : ""}`;
+      renderError(err.message, hint);
       return;
     }
-    renderError(err instanceof Error ? err.message : "Ошибка авторизации");
+    renderError(
+      err instanceof Error ? err.message : "Ошибка авторизации",
+      apiHint,
+    );
   }
 }
 

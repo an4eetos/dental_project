@@ -163,8 +163,8 @@ func provideListForDoctor(
 	return &appointmentuc.ListForDoctor{Appointments: repo, Users: users}
 }
 
-func newAuthHandler(login *authuc.TelegramLogin) *authhandler.Handler {
-	return &authhandler.Handler{Login: login}
+func newAuthHandler(login *authuc.TelegramLogin, log *slog.Logger) *authhandler.Handler {
+	return &authhandler.Handler{Login: login, Log: log}
 }
 
 func newAppointmentHandler(
@@ -189,6 +189,11 @@ func newGinEngine(
 	tgHTTP infrahttp.TelegramHTTPClient,
 	geminiHTTP infrahttp.GeminiHTTPClient,
 ) *gin.Engine {
+	if len(cfg.CORSAllowOrigins) == 0 {
+		log.Warn("cors: CORS_ALLOW_ORIGINS is empty — all origins allowed (ok for dev)")
+	} else {
+		log.Info("cors: allowed origins", "origins", cfg.CORSAllowOrigins)
+	}
 	return infrahttp.NewRouter(infrahttp.RouterParams{
 		Config:       cfg,
 		Log:          log,

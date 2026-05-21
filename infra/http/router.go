@@ -37,10 +37,10 @@ func NewRouter(p RouterParams) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(
-		jwtmiddleware.CORS(p.Config.CORSAllowOrigins),
 		middleware.Recovery(p.Log),
 		middleware.RequestID(),
 		middleware.SlogLogger(p.Log),
+		jwtmiddleware.CORS(p.Log, p.Config.CORSAllowOrigins),
 	)
 
 	r.GET("/health", func(c *gin.Context) {

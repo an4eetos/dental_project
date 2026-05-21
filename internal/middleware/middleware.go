@@ -41,13 +41,21 @@ func SlogLogger(log *slog.Logger) gin.HandlerFunc {
 		dur := time.Since(start)
 		rid, _ := c.Get("request_id")
 
-		log.Info("http",
+		attrs := []any{
 			"method", c.Request.Method,
 			"path", path,
 			"status", status,
 			"duration_ms", dur.Milliseconds(),
 			"request_id", rid,
-		)
+		}
+		if origin := c.GetHeader("Origin"); origin != "" {
+			attrs = append(attrs, "origin", origin)
+		}
+		if status >= 400 {
+			log.Warn("http", attrs...)
+			return
+		}
+		log.Info("http", attrs...)
 	}
 }
 
