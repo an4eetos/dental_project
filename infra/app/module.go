@@ -34,14 +34,8 @@ func Module() fx.Option {
 			loadConfig,
 			newLogger,
 			newBot,
-			fx.Annotate(
-				newTelegramHTTP,
-				fx.ResultTags(`name:"telegramHTTP"`),
-			),
-			fx.Annotate(
-				newGeminiHTTP,
-				fx.ResultTags(`name:"geminiHTTP"`),
-			),
+			newTelegramHTTPClient,
+			newGeminiHTTPClient,
 			newPool,
 			provideUserRepo,
 			provideAppointmentRepo,
@@ -55,10 +49,6 @@ func Module() fx.Option {
 			provideListForDoctor,
 			newAuthHandler,
 			newAppointmentHandler,
-			fx.Annotate(
-				newRouterParams,
-				fx.ParamTags(``, ``, ``, ``, ``, ``, `name:"telegramHTTP"`, `name:"geminiHTTP"`),
-			),
 			newGinEngine,
 			newHTTPServer,
 		),
@@ -89,12 +79,12 @@ func newBot(cfg config.Config, log *slog.Logger) (*tgbotapi.BotAPI, error) {
 	return bot, nil
 }
 
-func newTelegramHTTP(cfg config.Config) *http.Client {
-	return &http.Client{Timeout: cfg.TelegramDownloadTimeout}
+func newTelegramHTTPClient(cfg config.Config) infrahttp.TelegramHTTPClient {
+	return infrahttp.NewTelegramHTTPClient(cfg.TelegramDownloadTimeout)
 }
 
-func newGeminiHTTP(cfg config.Config) *http.Client {
-	return &http.Client{Timeout: cfg.GeminiHTTPTimeout}
+func newGeminiHTTPClient(cfg config.Config) infrahttp.GeminiHTTPClient {
+	return infrahttp.NewGeminiHTTPClient(cfg.GeminiHTTPTimeout)
 }
 
 func newPool(lc fx.Lifecycle, cfg config.Config) (*pgxpool.Pool, error) {
@@ -189,17 +179,17 @@ func newAppointmentHandler(
 	}
 }
 
-func newRouterParams(
+func newGinEngine(
 	cfg config.Config,
 	log *slog.Logger,
 	auth *authhandler.Handler,
 	appt *appointmenthandler.Handler,
 	tokens port.TokenIssuer,
 	bot *tgbotapi.BotAPI,
-	tgHTTP *http.Client,
-	geminiHTTP *http.Client,
-) infrahttp.RouterParams {
-	return infrahttp.RouterParams{
+	tgHTTP infrahttp.TelegramHTTPClient,
+	geminiHTTP infrahttp.GeminiHTTPClient,
+) *gin.Engine {
+	return infrahttp.NewRouter(infrahttp.RouterParams{
 		Config:       cfg,
 		Log:          log,
 		AuthHandler:  auth,
@@ -208,11 +198,7 @@ func newRouterParams(
 		Bot:          bot,
 		TelegramHTTP: tgHTTP,
 		GeminiHTTP:   geminiHTTP,
-	}
-}
-
-func newGinEngine(p infrahttp.RouterParams) *gin.Engine {
-	return infrahttp.NewRouter(p)
+	})
 }
 
 func newHTTPServer(cfg config.Config, engine *gin.Engine) *http.Server {

@@ -27,9 +27,9 @@ type RouterParams struct {
 	AuthHandler    *authhandler.Handler
 	AppointmentH   *appointment.Handler
 	Tokens         port.TokenIssuer
-	Bot            *tgbotapi.BotAPI
-	TelegramHTTP   *http.Client
-	GeminiHTTP     *http.Client
+	Bot          *tgbotapi.BotAPI
+	TelegramHTTP TelegramHTTPClient
+	GeminiHTTP   GeminiHTTPClient
 }
 
 // NewRouter builds the Gin engine with webhook and REST API routes.
@@ -58,9 +58,9 @@ func NewRouter(p RouterParams) *gin.Engine {
 		p.AppointmentH.ListForDoctor,
 	)
 
-	tgClient := telegrambot.New(p.Bot, p.TelegramHTTP)
+	tgClient := telegrambot.New(p.Bot, p.TelegramHTTP.Client)
 	imgProc := imageproc.New(p.Config.MaxImageDimension)
-	geminiClient := gemini.New(p.GeminiHTTP, p.Config.GeminiAPIKey, p.Config.GeminiModel, p.Log)
+	geminiClient := gemini.New(p.GeminiHTTP.Client, p.Config.GeminiAPIKey, p.Config.GeminiModel, p.Log)
 
 	r.POST("/webhook",
 		middleware.WebhookSecret(p.Config.TelegramWebhookSecret),
