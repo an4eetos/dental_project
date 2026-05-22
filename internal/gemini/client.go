@@ -177,20 +177,29 @@ STRICT RULES:
 - Describe only potentially visible issues using cautious Russian wording (e.g. «возможно», «может выглядеть как»).
 - Acknowledge uncertainty and limits of one photo, lighting, and camera quality.
 - Hygiene suggestions only — no treatment plans.
-- Recommend a dentist when appropriate.
 - Informational only; not medical advice.
+- The traffic-light level is a rough, non-clinical hint for the user — never state certainty.
 
-LANGUAGE: All strings in "visible_issues", "recommendations", and "disclaimer" MUST be in Russian.
+TRAFFIC LIGHT (informational triage only — assign exactly one):
+- "green": photo quality allows a rough look and nothing clearly worrying is visible; gums/teeth may appear generally okay. Routine hygiene is enough for now. Still not a clean bill of health.
+- "yellow": possible mild concerns worth monitoring — e.g. plaque buildup, slight gum redness, mild staining, uneven color; schedule a routine dental check when convenient.
+- "red": signs that reasonably suggest prompt professional evaluation — e.g. obvious swelling, heavy bleeding appearance, severe discoloration, broken tooth, pus, large cavity-like dark area, or strong concern despite photo limits. Urge dentist visit soon; not an emergency diagnosis.
+
+If the image is too blurry, dark, or not showing teeth/gums clearly, prefer "yellow", lower confidence, and say so in traffic_light_summary.
+
+LANGUAGE: All strings except traffic_light and confidence tokens MUST be in Russian.
 
 Respond ONLY with valid JSON (no markdown fences) exactly in this shape:
 {
+  "traffic_light": "green|yellow|red",
+  "traffic_light_summary": "одно-два предложения на русском, осторожно, без диагноза",
   "visible_issues": ["строка на русском"],
   "confidence": "low|medium|high",
   "recommendations": ["строка на русском"],
   "disclaimer": "Это не медицинская консультация."
 }
 
-Use English tokens only for "confidence": exactly one of low, medium, high (reflect image clarity and how speculative the observations are).
+Use English tokens only for "traffic_light" (green|yellow|red) and "confidence" (low|medium|high).
 Keep lists concise (max ~6 items each).`
 }
 
@@ -198,8 +207,28 @@ func normalizeAnalysis(a *model.Analysis) {
 	if a == nil {
 		return
 	}
+	switch strings.ToLower(strings.TrimSpace(a.TrafficLight)) {
+	case "green", "yellow", "red":
+		a.TrafficLight = strings.ToLower(strings.TrimSpace(a.TrafficLight))
+	default:
+		a.TrafficLight = "yellow"
+	}
+	if strings.TrimSpace(a.TrafficLightSummary) == "" {
+		a.TrafficLightSummary = defaultTrafficSummary(a.TrafficLight)
+	}
 	if strings.TrimSpace(a.Disclaimer) == "" {
 		a.Disclaimer = "Это не медицинская консультация."
+	}
+}
+
+func defaultTrafficSummary(level string) string {
+	switch level {
+	case "green":
+		return "По снимку явных тревожных признаков не видно; поддерживайте гигиену и плановые осмотры."
+	case "red":
+		return "Есть признаки, из‑за которых стоит обратиться к стоматологу в ближайшее время."
+	default:
+		return "Есть нюансы, которые лучше обсудить со стоматологом на плановом приёме."
 	}
 }
 

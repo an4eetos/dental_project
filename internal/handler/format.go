@@ -16,6 +16,13 @@ func FormatTelegramReply(a *model.Analysis) string {
 	b.WriteString("Только справочная информация — не медицинская и не стоматологическая консультация.\n\n")
 	b.WriteString("Наблюдения могут быть ошибочными; одного фото недостаточно для оценки.\n\n")
 
+	label, hint := trafficLightBlockRU(a.TrafficLight)
+	b.WriteString(fmt.Sprintf("%s\n", label))
+	if summary := strings.TrimSpace(a.TrafficLightSummary); summary != "" {
+		b.WriteString(fmt.Sprintf("%s\n", summary))
+	}
+	b.WriteString(fmt.Sprintf("%s\n\n", hint))
+
 	b.WriteString("Возможные заметные особенности (без диагноза, с оговорками):\n")
 	if len(a.VisibleIssues) == 0 {
 		b.WriteString("- надёжно не выявлено\n")
@@ -49,6 +56,20 @@ func FormatTelegramReply(a *model.Analysis) string {
 		s = s[:telegramMaxMessageLen] + "\n…(сообщение обрезано)"
 	}
 	return s
+}
+
+func trafficLightBlockRU(level string) (headline string, hint string) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "green":
+		return "🟢 Уровень: зелёный (справочно)",
+			"На снимке не видно явных поводов для беспокойства; продолжайте гигиену и плановые визиты к стоматологу."
+	case "red":
+		return "🔴 Уровень: красный (справочно)",
+			"Рекомендуется записаться к стоматологу в ближайшее время. При сильной боли, кровотечении или отёке — срочная помощь."
+	default:
+		return "🟡 Уровень: жёлтый (справочно)",
+			"Имеет смысл показать снимок стоматологу на плановом приёме и следить за гигиеной."
+	}
 }
 
 func confidenceLabelRU(raw string) string {
