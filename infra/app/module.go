@@ -25,7 +25,6 @@ import (
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
 	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
 	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
-	exceladapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/excel"
 	"github.com/anuarkuanysh/dental_project/internal/gemini"
 	"github.com/anuarkuanysh/dental_project/internal/imageproc"
 	"github.com/anuarkuanysh/dental_project/internal/port"
@@ -293,19 +292,6 @@ func provideAdminStatistics(
 	users port.UserRepository,
 ) *adminuc.Statistics {
 	return &adminuc.Statistics{Stats: stats, Users: users}
-}
-
-func providePredictionExamples(cfg config.Config, log *slog.Logger) (port.PredictionExampleRepository, error) {
-	repo, err := exceladapter.NewRepository(cfg.PredictionExamplesPath)
-	if err != nil {
-		return nil, err
-	}
-	examples, err := repo.ListExamples(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	log.Info("prediction examples loaded", "path", cfg.PredictionExamplesPath, "count", len(examples))
-	return repo, nil
 }
 
 func provideTextGenerator(

@@ -15,5 +15,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 WORKDIR /
 COPY --from=build /out/teeth-bot /teeth-bot
+COPY --from=build /src/data /data
+ENV PREDICTION_EXAMPLES_PATH=/data/prediction_examples.xlsx
 USER nobody
 ENTRYPOINT ["/teeth-bot"]
