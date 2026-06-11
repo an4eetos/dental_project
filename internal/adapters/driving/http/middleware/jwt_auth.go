@@ -50,6 +50,18 @@ func RequireDoctor() gin.HandlerFunc {
 	}
 }
 
+// RequireAdmin aborts unless the authenticated user has the admin role.
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, ok := MustRole(c)
+		if !ok || role != identity.RoleAdmin {
+			httperrors.Write(c, domainerrors.ErrForbidden)
+			return
+		}
+		c.Next()
+	}
+}
+
 // MustUserID reads authenticated user id from context.
 func MustUserID(c *gin.Context) (int64, bool) {
 	v, ok := c.Get(ContextUserIDKey)

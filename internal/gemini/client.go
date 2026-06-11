@@ -1,16 +1,13 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/anuarkuanysh/dental_project/internal/model"
@@ -28,6 +25,7 @@ type Client struct {
 }
 
 var _ port.VisionAnalyzer = (*Client)(nil)
+var _ port.TextGenerator = (*Client)(nil)
 
 // New constructs a Gemini REST client.
 func New(httpClient *http.Client, apiKey, model string, log *slog.Logger) *Client {
@@ -107,56 +105,10 @@ func (c *Client) AnalyzeTeethImage(ctx context.Context, image []byte, mimeType s
 		},
 	}
 
-	payload, err := json.Marshal(body)
+	text, err := c.generateContent(ctx, body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, err
 	}
-
-	base := fmt.Sprintf(geminiGenerateURL, c.model)
-	u, err := url.Parse(base)
-	if err != nil {
-		return nil, fmt.Errorf("parse gemini url: %w", err)
-	}
-	q := u.Query()
-	q.Set("key", c.apiKey)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("gemini request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		c.log.Warn("gemini non-OK response", "status", resp.StatusCode, "body", truncate(string(raw), 800))
-		return nil, fmt.Errorf("gemini status %d", resp.StatusCode)
-	}
-
-	var gr generateResponse
-	if err := json.Unmarshal(raw, &gr); err != nil {
-		return nil, fmt.Errorf("decode gemini envelope: %w", err)
-	}
-
-	if gr.Error != nil {
-		return nil, fmt.Errorf("gemini api error: %s (%s)", gr.Error.Message, gr.Error.Status)
-	}
-
-	if len(gr.Candidates) == 0 || len(gr.Candidates[0].Content.Parts) == 0 {
-		return nil, errors.New("gemini returned no candidates")
-	}
-
-	text := strings.TrimSpace(gr.Candidates[0].Content.Parts[0].Text)
 	text = extractJSON(text)
 
 	var out model.Analysis
@@ -165,7 +117,6 @@ func (c *Client) AnalyzeTeethImage(ctx context.Context, image []byte, mimeType s
 		return nil, fmt.Errorf("parse analysis json: %w", err)
 	}
 
-	normalizeAnalysis(&out)
 	return &out, nil
 }
 
@@ -178,58 +129,20 @@ STRICT RULES:
 - Acknowledge uncertainty and limits of one photo, lighting, and camera quality.
 - Hygiene suggestions only — no treatment plans.
 - Informational only; not medical advice.
-- The traffic-light level is a rough, non-clinical hint for the user — never state certainty.
 
-TRAFFIC LIGHT (informational triage only — assign exactly one):
-- "green": photo quality allows a rough look and nothing clearly worrying is visible; gums/teeth may appear generally okay. Routine hygiene is enough for now. Still not a clean bill of health.
-- "yellow": possible mild concerns worth monitoring — e.g. plaque buildup, slight gum redness, mild staining, uneven color; schedule a routine dental check when convenient.
-- "red": signs that reasonably suggest prompt professional evaluation — e.g. obvious swelling, heavy bleeding appearance, severe discoloration, broken tooth, pus, large cavity-like dark area, or strong concern despite photo limits. Urge dentist visit soon; not an emergency diagnosis.
+If the image is too blurry, dark, or not showing teeth/gums clearly, lower confidence and mention it in visible_issues.
 
-If the image is too blurry, dark, or not showing teeth/gums clearly, prefer "yellow", lower confidence, and say so in traffic_light_summary.
-
-LANGUAGE: All strings except traffic_light and confidence tokens MUST be in Russian.
+LANGUAGE: All strings except confidence tokens MUST be in Russian.
 
 Respond ONLY with valid JSON (no markdown fences) exactly in this shape:
 {
-  "traffic_light": "green|yellow|red",
-  "traffic_light_summary": "одно-два предложения на русском, осторожно, без диагноза",
   "visible_issues": ["строка на русском"],
   "confidence": "low|medium|high",
-  "recommendations": ["строка на русском"],
-  "disclaimer": "Это не медицинская консультация."
+  "recommendations": ["строка на русском"]
 }
 
-Use English tokens only for "traffic_light" (green|yellow|red) and "confidence" (low|medium|high).
+Use English tokens only for "confidence" (low|medium|high).
 Keep lists concise (max ~6 items each).`
-}
-
-func normalizeAnalysis(a *model.Analysis) {
-	if a == nil {
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(a.TrafficLight)) {
-	case "green", "yellow", "red":
-		a.TrafficLight = strings.ToLower(strings.TrimSpace(a.TrafficLight))
-	default:
-		a.TrafficLight = "yellow"
-	}
-	if strings.TrimSpace(a.TrafficLightSummary) == "" {
-		a.TrafficLightSummary = defaultTrafficSummary(a.TrafficLight)
-	}
-	if strings.TrimSpace(a.Disclaimer) == "" {
-		a.Disclaimer = "Это не медицинская консультация."
-	}
-}
-
-func defaultTrafficSummary(level string) string {
-	switch level {
-	case "green":
-		return "По снимку явных тревожных признаков не видно; поддерживайте гигиену и плановые осмотры."
-	case "red":
-		return "Есть признаки, из‑за которых стоит обратиться к стоматологу в ближайшее время."
-	default:
-		return "Есть нюансы, которые лучше обсудить со стоматологом на плановом приёме."
-	}
 }
 
 func extractJSON(s string) string {

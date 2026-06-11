@@ -26,6 +26,8 @@ type Config struct {
 	TelegramAuthMaxAge time.Duration
 	CORSAllowOrigins    []string
 	DoctorTelegramIDs   []int64
+	AdminTelegramIDs    []int64
+	PredictionExamplesPath string
 }
 
 // Load reads configuration from environment variables.
@@ -39,6 +41,7 @@ func Load() (Config, error) {
 		MaxImageDimension:       getIntEnv("MAX_IMAGE_DIMENSION", 1024),
 		JWTTTL:                  getDurationEnv("JWT_TTL", 24*time.Hour),
 		TelegramAuthMaxAge:      getDurationEnv("TELEGRAM_AUTH_MAX_AGE", 24*time.Hour),
+		PredictionExamplesPath:  getEnv("PREDICTION_EXAMPLES_PATH", "data/prediction_examples.xlsx"),
 	}
 
 	cfg.TelegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -65,6 +68,7 @@ func Load() (Config, error) {
 
 	cfg.CORSAllowOrigins = parseCSV(os.Getenv("CORS_ALLOW_ORIGINS"))
 	cfg.DoctorTelegramIDs = parseTelegramIDs(os.Getenv("DOCTOR_TELEGRAM_IDS"))
+	cfg.AdminTelegramIDs = parseTelegramIDs(os.Getenv("ADMIN_TELEGRAM_IDS"))
 
 	return cfg, nil
 }

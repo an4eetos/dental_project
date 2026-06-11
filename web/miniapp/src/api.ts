@@ -1,11 +1,25 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 const DEBUG = import.meta.env.DEV || import.meta.env.VITE_DEBUG === "true";
+
+/** Ensures absolute URL; without https:// fetch treats host as a path on the Mini App origin → HTTP 405. */
+function normalizeApiBase(raw: string | undefined): string {
+  const fallback = "http://localhost:8080";
+  let base = (raw ?? fallback).trim();
+  if (!base) {
+    base = fallback;
+  }
+  if (!/^https?:\/\//i.test(base)) {
+    base = `https://${base}`;
+  }
+  return base.replace(/\/+$/, "");
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 
 export function apiBaseUrl(): string {
   return API_BASE;
 }
 
-export type UserRole = "patient" | "doctor";
+export type UserRole = "patient" | "doctor" | "admin";
 
 export type User = {
   id: number;
@@ -54,6 +68,9 @@ export class ApiError extends Error {
 function fallbackMessage(status: number, rawText: string): string {
   if (status === 0) {
     return "Нет ответа от сервера (сеть, CORS или неверный URL API)";
+  }
+  if (status === 405) {
+    return `Метод не разрешён (405). Укажите VITE_API_BASE_URL с https:// (сейчас: ${API_BASE})`;
   }
   if (status === 404) {
     return `API не найден (404). Проверьте VITE_API_BASE_URL: ${API_BASE}`;
@@ -167,6 +184,148 @@ export async function listAllAppointments(
   token: string,
 ): Promise<{ appointments: DoctorAppointment[] }> {
   return request<{ appointments: DoctorAppointment[] }>("/appointments", {
+    method: "GET",
+    token,
+  });
+}
+
+export type PredictRequest = {
+  age: string;
+  pregnancy_weeks: string;
+  kpu_index: string;
+  brushing_per_day: string;
+  dentist_visit_during_pregnancy: string;
+  parent_caries: string;
+  saliva_ph: string;
+};
+
+export type PredictResponse = {
+  child_caries_probability: string;
+  risk_group: string;
+  action: string;
+  recommendations: string;
+};
+
+export async function predict(
+  token: string,
+  body: PredictRequest,
+): Promise<PredictResponse> {
+  return request<PredictResponse>("/predict", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export type PhotoSubmissionPatient = {
+  id: number;
+  telegram_id: number;
+  username?: string;
+  first_name: string;
+  last_name?: string;
+};
+
+export type PhotoSubmission = {
+  id: number;
+  status: "pending" | "answered";
+  created_at: string;
+  responded_at?: string;
+  doctor_response?: string;
+  ai_draft?: {
+    visible_issues: string[];
+    confidence: string;
+    recommendations: string[];
+  };
+  patient: PhotoSubmissionPatient;
+};
+
+export async function listPendingSubmissions(
+  token: string,
+): Promise<{ submissions: PhotoSubmission[] }> {
+  return request<{ submissions: PhotoSubmission[] }>("/submissions/pending", {
+    method: "GET",
+    token,
+  });
+}
+
+export async function listAnsweredSubmissions(
+  token: string,
+): Promise<{ submissions: PhotoSubmission[] }> {
+  return request<{ submissions: PhotoSubmission[] }>("/submissions/answered", {
+    method: "GET",
+    token,
+  });
+}
+
+export async function getSubmission(
+  token: string,
+  id: number,
+): Promise<PhotoSubmission> {
+  return request<PhotoSubmission>(`/submissions/${id}`, {
+    method: "GET",
+    token,
+  });
+}
+
+export async function generateSubmissionDraft(
+  token: string,
+  id: number,
+): Promise<{ submission: PhotoSubmission; draft_text: string }> {
+  return request<{ submission: PhotoSubmission; draft_text: string }>(
+    `/submissions/${id}/draft`,
+    { method: "POST", token },
+  );
+}
+
+export async function respondToSubmission(
+  token: string,
+  id: number,
+  response: string,
+): Promise<PhotoSubmission> {
+  return request<PhotoSubmission>(`/submissions/${id}/respond`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ response }),
+  });
+}
+
+export async function fetchSubmissionPhotoUrl(
+  token: string,
+  id: number,
+): Promise<string> {
+  const url = `${API_BASE}/submissions/${id}/photo`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new ApiError(`Не удалось загрузить фото: ${detail}`, 0, "network_error");
+  }
+  if (!res.ok) {
+    throw new ApiError("Не удалось загрузить фото", res.status);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+export type AdminStatistics = {
+  total_users: number;
+  total_patients: number;
+  total_doctors: number;
+  total_admins: number;
+  total_photo_submissions: number;
+  pending_photo_submissions: number;
+  answered_photo_submissions: number;
+  total_appointments: number;
+  pending_appointments: number;
+  confirmed_appointments: number;
+  cancelled_appointments: number;
+};
+
+export async function getAdminStatistics(token: string): Promise<AdminStatistics> {
+  return request<AdminStatistics>("/admin/statistics", {
     method: "GET",
     token,
   });

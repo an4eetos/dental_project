@@ -22,6 +22,7 @@ func testConfig() config.Config {
 		MaxImageDimension:       1024,
 		JWTTTL:                  24 * time.Hour,
 		TelegramAuthMaxAge:      24 * time.Hour,
+		PredictionExamplesPath:  "data/prediction_examples.xlsx",
 	}
 }
 

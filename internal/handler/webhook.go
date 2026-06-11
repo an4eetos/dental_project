@@ -10,17 +10,17 @@ import (
 	"github.com/gin-gonic/gin"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
+	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
 )
 
 // WebhookDeps wires interfaces for the webhook handler.
 type WebhookDeps struct {
-	Downloader   port.FileDownloader
-	Sender       port.MessageSender
-	Analyzer     port.VisionAnalyzer
-	Images       port.ImageProcessor
-	Log          *slog.Logger
-	ReqTimeout   time.Duration
+	SubmitPhoto *photoreviewuc.SubmitFromTelegram
+	Sender      port.MessageSender
+	Log        *slog.Logger
+	ReqTimeout time.Duration
 }
 
 // Webhook returns a Gin handler for Telegram updates (webhook).
@@ -65,38 +65,28 @@ func Webhook(deps WebhookDeps) gin.HandlerFunc {
 			return
 		}
 
+		if msg.From == nil {
+			_ = deps.Sender.SendText(ctx, chatID, "Не удалось определить отправителя. Попробуйте ещё раз.")
+			c.Status(http.StatusOK)
+			return
+		}
+
 		photo := msg.Photo[len(msg.Photo)-1]
-		raw, mimeHint, err := deps.Downloader.DownloadFile(ctx, photo.FileID)
+		err := deps.SubmitPhoto.Execute(ctx, photoreviewuc.SubmitInput{
+			Profile: identity.TelegramProfile{
+				TelegramID: msg.From.ID,
+				Username:   msg.From.UserName,
+				FirstName:  msg.From.FirstName,
+				LastName:   msg.From.LastName,
+			},
+			ChatID: chatID,
+			FileID: photo.FileID,
+		})
 		if err != nil {
-			deps.Log.Error("download failed", "err", err)
-			_ = deps.Sender.SendText(ctx, chatID, "Не удалось загрузить изображение. Попробуйте ещё раз.")
+			deps.Log.Error("photo submission failed", "err", err)
+			_ = deps.Sender.SendText(ctx, chatID, submissionErrorText(err))
 			c.Status(http.StatusOK)
 			return
-		}
-
-		imgBytes, mimeType, err := deps.Images.PrepareForVision(raw, mimeHint)
-		if err != nil {
-			deps.Log.Warn("image prepare failed", "err", err)
-			_ = deps.Sender.SendText(ctx, chatID, "Не удалось обработать изображение. Отправьте фото в формате JPG, PNG или WEBP.")
-			c.Status(http.StatusOK)
-			return
-		}
-
-		analysis, err := deps.Analyzer.AnalyzeTeethImage(ctx, imgBytes, mimeType)
-		if err != nil {
-			deps.Log.Error("gemini analysis failed", "err", err)
-			if errors.Is(err, context.DeadlineExceeded) {
-				_ = deps.Sender.SendText(ctx, chatID, "Анализ занял слишком много времени. Попробуйте отправить фото меньшего размера.")
-			} else {
-				_ = deps.Sender.SendText(ctx, chatID, "Не удалось выполнить анализ. Попробуйте позже.")
-			}
-			c.Status(http.StatusOK)
-			return
-		}
-
-		reply := FormatTelegramReply(analysis)
-		if err := deps.Sender.SendText(ctx, chatID, reply); err != nil {
-			deps.Log.Error("send reply failed", "err", err)
 		}
 
 		c.Status(http.StatusOK)
@@ -104,15 +94,24 @@ func Webhook(deps WebhookDeps) gin.HandlerFunc {
 }
 
 func welcomeText() string {
-	return "Добро пожаловать в стоматологический AI-ассистент.\n\n" +
-		"Отправьте чёткое фото зубов для общих, недиагностических наблюдений.\n" +
+	return "Добро пожаловать в стоматологический ассистент клиники.\n\n" +
+		"Отправьте чёткое фото зубов — врач рассмотрит его и пришлёт ответ в этот чат в течение 48 часов.\n" +
 		"Чтобы записаться на приём, откройте Mini App через меню бота.\n\n" +
-		"Бот не ставит диагнозы и не является медицинской консультацией.\n" +
-		"Не используйте ответы для решений о лечении — обратитесь к стоматологу."
+		"⚠️ Важно:\n" +
+		"• Ответ врача — справочная информация, не медицинская консультация.\n" +
+		"• Одного фото недостаточно для полной оценки состояния зубов.\n" +
+		"• При симптомах, боли, отёке или тревоге за здоровье обратитесь к стоматологу."
 }
 
 func helpText() string {
 	return "Отправьте фото зубов (не стикер и не документ без сжатого превью).\n\n" +
-		"Для записи на приём откройте Mini App в меню бота.\n\n" +
-		"Ответы носят информационный характер и не являются медицинской консультацией."
+		"Врач ответит в течение 48 часов.\n" +
+		"Для записи на приём откройте Mini App в меню бота."
+}
+
+func submissionErrorText(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Обработка заняла слишком много времени. Попробуйте отправить фото меньшего размера."
+	}
+	return "Не удалось принять фото. Попробуйте ещё раз или позже."
 }

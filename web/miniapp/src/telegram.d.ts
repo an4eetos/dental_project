@@ -25,6 +25,7 @@ interface TelegramWebApp {
     disable(): void;
   };
   showAlert(message: string, cb?: () => void): void;
+  openLink(url: string, options?: { try_instant_view?: boolean }): void;
   themeParams: Record<string, string>;
   colorScheme: "light" | "dark";
 }

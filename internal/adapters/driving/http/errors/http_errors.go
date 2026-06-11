@@ -46,10 +46,18 @@ func statusForCode(code string) int {
 	case domainerrors.ErrInvalidPreferredDate.Code(),
 		domainerrors.ErrInvalidPreferredTime.Code():
 		return http.StatusBadRequest
-	case domainerrors.ErrUserNotFound.Code():
+	case domainerrors.ErrUserNotFound.Code(),
+		domainerrors.ErrSubmissionNotFound.Code():
 		return http.StatusNotFound
 	case domainerrors.ErrForbidden.Code():
 		return http.StatusForbidden
+	case domainerrors.ErrSubmissionAlreadyAnswered.Code(),
+		domainerrors.ErrEmptyDoctorResponse.Code():
+		return http.StatusBadRequest
+	case domainerrors.ErrNoPredictionExamples.Code(),
+		domainerrors.ErrPredictionFailed.Code(),
+		domainerrors.ErrDraftGenerationFailed.Code():
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

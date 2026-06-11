@@ -13,6 +13,7 @@ type TelegramLogin struct {
 	Users     port.UserRepository
 	Tokens    port.TokenIssuer
 	Doctors   port.DoctorRegistry
+	Admins    port.AdminRegistry
 }
 
 // LoginResult is returned after successful authentication.
@@ -30,6 +31,9 @@ func (uc *TelegramLogin) Execute(ctx context.Context, initData string) (LoginRes
 	role := identity.RolePatient
 	if uc.Doctors.IsDoctor(profile.TelegramID) {
 		role = identity.RoleDoctor
+	}
+	if uc.Admins.IsAdmin(profile.TelegramID) {
+		role = identity.RoleAdmin
 	}
 
 	user, err := uc.Users.UpsertByTelegramID(ctx, port.UpsertUserParams{

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
 
+	"github.com/anuarkuanysh/dental_project/infra/admin"
 	"github.com/anuarkuanysh/dental_project/infra/config"
 	"github.com/anuarkuanysh/dental_project/infra/doctor"
 	infrahttp "github.com/anuarkuanysh/dental_project/infra/http"
@@ -19,11 +20,21 @@ import (
 	"github.com/anuarkuanysh/dental_project/internal/adapters/driven/jwt"
 	postgresadapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/postgres"
 	telegramadapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/telegram"
+	adminhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/admin"
 	appointmenthandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/appointment"
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
+	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
+	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
+	exceladapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/excel"
+	"github.com/anuarkuanysh/dental_project/internal/gemini"
+	"github.com/anuarkuanysh/dental_project/internal/imageproc"
 	"github.com/anuarkuanysh/dental_project/internal/port"
+	"github.com/anuarkuanysh/dental_project/internal/telegrambot"
 	authuc "github.com/anuarkuanysh/dental_project/internal/usecase/auth"
+	adminuc "github.com/anuarkuanysh/dental_project/internal/usecase/admin"
 	appointmentuc "github.com/anuarkuanysh/dental_project/internal/usecase/appointment"
+	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
+	predictionuc "github.com/anuarkuanysh/dental_project/internal/usecase/prediction"
 	pkgclock "github.com/anuarkuanysh/dental_project/pkg/clock"
 )
 
@@ -39,16 +50,36 @@ func Module() fx.Option {
 			newPool,
 			provideUserRepo,
 			provideAppointmentRepo,
+			providePhotoSubmissionRepo,
+			provideStatsRepo,
 			provideInitDataValidator,
 			provideDoctorRegistry,
+			provideAdminRegistry,
 			provideTokenIssuer,
 			provideClock,
+			provideImageProcessor,
+			provideTelegramBotClient,
+			provideVisionAnalyzer,
 			provideTelegramLogin,
 			provideCreateAppointment,
 			provideListAppointments,
 			provideListForDoctor,
+			provideSubmitPhoto,
+			provideListPendingSubmissions,
+			provideListAnsweredSubmissions,
+			provideGetSubmission,
+			provideGetSubmissionImage,
+			provideGenerateDraft,
+			provideRespondSubmission,
+			provideAdminStatistics,
+			providePredictionExamples,
+			provideTextGenerator,
+			providePredict,
 			newAuthHandler,
 			newAppointmentHandler,
+			newPhotoReviewHandler,
+			newAdminHandler,
+			newPredictionHandler,
 			newGinEngine,
 			newHTTPServer,
 		),
@@ -114,12 +145,40 @@ func provideAppointmentRepo(pool *pgxpool.Pool) port.AppointmentRepository {
 	return postgresadapter.NewAppointmentRepository(pool)
 }
 
+func providePhotoSubmissionRepo(pool *pgxpool.Pool) port.PhotoSubmissionRepository {
+	return postgresadapter.NewPhotoSubmissionRepository(pool)
+}
+
+func provideStatsRepo(pool *pgxpool.Pool) port.StatsRepository {
+	return postgresadapter.NewStatsRepository(pool)
+}
+
 func provideInitDataValidator(cfg config.Config) port.TelegramInitDataValidator {
 	return telegramadapter.NewInitDataValidator(cfg.TelegramBotToken, cfg.TelegramAuthMaxAge)
 }
 
 func provideDoctorRegistry(cfg config.Config) port.DoctorRegistry {
 	return doctor.NewTelegramIDRegistry(cfg.DoctorTelegramIDs)
+}
+
+func provideAdminRegistry(cfg config.Config) port.AdminRegistry {
+	return admin.NewTelegramIDRegistry(cfg.AdminTelegramIDs)
+}
+
+func provideImageProcessor(cfg config.Config) port.ImageProcessor {
+	return imageproc.New(cfg.MaxImageDimension)
+}
+
+func provideTelegramBotClient(bot *tgbotapi.BotAPI, tgHTTP infrahttp.TelegramHTTPClient) *telegrambot.Client {
+	return telegrambot.New(bot, tgHTTP.Client)
+}
+
+func provideVisionAnalyzer(
+	cfg config.Config,
+	geminiHTTP infrahttp.GeminiHTTPClient,
+	log *slog.Logger,
+) port.VisionAnalyzer {
+	return gemini.New(geminiHTTP.Client, cfg.GeminiAPIKey, cfg.GeminiModel, log)
 }
 
 func provideTokenIssuer(cfg config.Config) port.TokenIssuer {
@@ -135,12 +194,14 @@ func provideTelegramLogin(
 	users port.UserRepository,
 	tokens port.TokenIssuer,
 	doctors port.DoctorRegistry,
+	admins port.AdminRegistry,
 ) *authuc.TelegramLogin {
 	return &authuc.TelegramLogin{
 		Validator: v,
 		Users:     users,
 		Tokens:    tokens,
 		Doctors:   doctors,
+		Admins:    admins,
 	}
 }
 
@@ -163,6 +224,109 @@ func provideListForDoctor(
 	return &appointmentuc.ListForDoctor{Appointments: repo, Users: users}
 }
 
+func provideSubmitPhoto(
+	users port.UserRepository,
+	submissions port.PhotoSubmissionRepository,
+	images port.ImageProcessor,
+	tg *telegrambot.Client,
+	doctors port.DoctorRegistry,
+	admins port.AdminRegistry,
+) *photoreviewuc.SubmitFromTelegram {
+	return &photoreviewuc.SubmitFromTelegram{
+		Users:       users,
+		Submissions: submissions,
+		Images:      images,
+		Downloader:  tg,
+		Sender:      tg,
+		Doctors:     doctors,
+		Admins:      admins,
+	}
+}
+
+func provideListPendingSubmissions(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+) *photoreviewuc.ListPending {
+	return &photoreviewuc.ListPending{Submissions: submissions, Users: users}
+}
+
+func provideListAnsweredSubmissions(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+) *photoreviewuc.ListAnswered {
+	return &photoreviewuc.ListAnswered{Submissions: submissions, Users: users}
+}
+
+func provideGetSubmission(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+) *photoreviewuc.Get {
+	return &photoreviewuc.Get{Submissions: submissions, Users: users}
+}
+
+func provideGetSubmissionImage(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+) *photoreviewuc.GetImage {
+	return &photoreviewuc.GetImage{Submissions: submissions, Users: users}
+}
+
+func provideGenerateDraft(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+	analyzer port.VisionAnalyzer,
+) *photoreviewuc.GenerateDraft {
+	return &photoreviewuc.GenerateDraft{Submissions: submissions, Users: users, Analyzer: analyzer}
+}
+
+func provideRespondSubmission(
+	submissions port.PhotoSubmissionRepository,
+	users port.UserRepository,
+	tg *telegrambot.Client,
+	clock port.Clock,
+) *photoreviewuc.Respond {
+	return &photoreviewuc.Respond{Submissions: submissions, Users: users, Sender: tg, Clock: clock}
+}
+
+func provideAdminStatistics(
+	stats port.StatsRepository,
+	users port.UserRepository,
+) *adminuc.Statistics {
+	return &adminuc.Statistics{Stats: stats, Users: users}
+}
+
+func providePredictionExamples(cfg config.Config, log *slog.Logger) (port.PredictionExampleRepository, error) {
+	repo, err := exceladapter.NewRepository(cfg.PredictionExamplesPath)
+	if err != nil {
+		return nil, err
+	}
+	examples, err := repo.ListExamples(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	log.Info("prediction examples loaded", "path", cfg.PredictionExamplesPath, "count", len(examples))
+	return repo, nil
+}
+
+func provideTextGenerator(
+	cfg config.Config,
+	geminiHTTP infrahttp.GeminiHTTPClient,
+	log *slog.Logger,
+) port.TextGenerator {
+	return gemini.New(geminiHTTP.Client, cfg.GeminiAPIKey, cfg.GeminiModel, log)
+}
+
+func providePredict(
+	examples port.PredictionExampleRepository,
+	generator port.TextGenerator,
+) *predictionuc.Predict {
+	return &predictionuc.Predict{Examples: examples, Generator: generator}
+}
+
+func newPredictionHandler(predict *predictionuc.Predict) *predictionhandler.Handler {
+	return &predictionhandler.Handler{PredictUC: predict}
+}
+
 func newAuthHandler(login *authuc.TelegramLogin, log *slog.Logger) *authhandler.Handler {
 	return &authhandler.Handler{Login: login, Log: log}
 }
@@ -179,15 +343,40 @@ func newAppointmentHandler(
 	}
 }
 
+func newPhotoReviewHandler(
+	listPending *photoreviewuc.ListPending,
+	listAnswered *photoreviewuc.ListAnswered,
+	get *photoreviewuc.Get,
+	getImage *photoreviewuc.GetImage,
+	generateDraft *photoreviewuc.GenerateDraft,
+	respond *photoreviewuc.Respond,
+) *photoreviewhandler.Handler {
+	return &photoreviewhandler.Handler{
+		ListPendingUC:   listPending,
+		ListAnsweredUC:  listAnswered,
+		GetUC:           get,
+		GetImageUC:      getImage,
+		GenerateDraftUC: generateDraft,
+		RespondUC:       respond,
+	}
+}
+
+func newAdminHandler(statistics *adminuc.Statistics) *adminhandler.Handler {
+	return &adminhandler.Handler{StatisticsUC: statistics}
+}
+
 func newGinEngine(
 	cfg config.Config,
 	log *slog.Logger,
 	auth *authhandler.Handler,
 	appt *appointmenthandler.Handler,
+	photoReview *photoreviewhandler.Handler,
+	adminH *adminhandler.Handler,
+	predict *predictionhandler.Handler,
+	submitPhoto *photoreviewuc.SubmitFromTelegram,
 	tokens port.TokenIssuer,
 	bot *tgbotapi.BotAPI,
 	tgHTTP infrahttp.TelegramHTTPClient,
-	geminiHTTP infrahttp.GeminiHTTPClient,
 ) *gin.Engine {
 	if len(cfg.CORSAllowOrigins) == 0 {
 		log.Warn("cors: CORS_ALLOW_ORIGINS is empty — all origins allowed (ok for dev)")
@@ -199,10 +388,13 @@ func newGinEngine(
 		Log:          log,
 		AuthHandler:  auth,
 		AppointmentH: appt,
+		PhotoReviewH: photoReview,
+		AdminH:       adminH,
+		PredictionH:  predict,
+		SubmitPhoto:  submitPhoto,
 		Tokens:       tokens,
 		Bot:          bot,
 		TelegramHTTP: tgHTTP,
-		GeminiHTTP:   geminiHTTP,
 	})
 }
 

@@ -9,15 +9,17 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/anuarkuanysh/dental_project/infra/config"
+	adminhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/admin"
 	"github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/appointment"
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
 	jwtmiddleware "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/middleware"
-	"github.com/anuarkuanysh/dental_project/internal/gemini"
+	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
+	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
 	"github.com/anuarkuanysh/dental_project/internal/handler"
-	"github.com/anuarkuanysh/dental_project/internal/imageproc"
 	"github.com/anuarkuanysh/dental_project/internal/middleware"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 	"github.com/anuarkuanysh/dental_project/internal/telegrambot"
+	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
 )
 
 // RouterParams wires HTTP routes.
@@ -26,10 +28,13 @@ type RouterParams struct {
 	Log            *slog.Logger
 	AuthHandler    *authhandler.Handler
 	AppointmentH   *appointment.Handler
+	PhotoReviewH   *photoreviewhandler.Handler
+	AdminH         *adminhandler.Handler
+	PredictionH    *predictionhandler.Handler
+	SubmitPhoto    *photoreviewuc.SubmitFromTelegram
 	Tokens         port.TokenIssuer
-	Bot          *tgbotapi.BotAPI
-	TelegramHTTP TelegramHTTPClient
-	GeminiHTTP   GeminiHTTPClient
+	Bot            *tgbotapi.BotAPI
+	TelegramHTTP   TelegramHTTPClient
 }
 
 // NewRouter builds the Gin engine with webhook and REST API routes.
@@ -58,19 +63,37 @@ func NewRouter(p RouterParams) *gin.Engine {
 		p.AppointmentH.ListForDoctor,
 	)
 
+	if p.PhotoReviewH != nil {
+		doctor := protected.Group("/submissions")
+		doctor.Use(jwtmiddleware.RequireDoctor())
+		doctor.GET("/pending", p.PhotoReviewH.ListPending)
+		doctor.GET("/answered", p.PhotoReviewH.ListAnswered)
+		doctor.GET("/:id", p.PhotoReviewH.Get)
+		doctor.GET("/:id/photo", p.PhotoReviewH.GetImage)
+		doctor.POST("/:id/draft", p.PhotoReviewH.GenerateDraft)
+		doctor.POST("/:id/respond", p.PhotoReviewH.Respond)
+	}
+
+	if p.AdminH != nil {
+		protected.GET("/admin/statistics",
+			jwtmiddleware.RequireAdmin(),
+			p.AdminH.GetStatistics,
+		)
+	}
+
+	if p.PredictionH != nil {
+		protected.POST("/predict", p.PredictionH.Predict)
+	}
+
 	tgClient := telegrambot.New(p.Bot, p.TelegramHTTP.Client)
-	imgProc := imageproc.New(p.Config.MaxImageDimension)
-	geminiClient := gemini.New(p.GeminiHTTP.Client, p.Config.GeminiAPIKey, p.Config.GeminiModel, p.Log)
 
 	r.POST("/webhook",
 		middleware.WebhookSecret(p.Config.TelegramWebhookSecret),
 		handler.Webhook(handler.WebhookDeps{
-			Downloader: tgClient,
-			Sender:     tgClient,
-			Analyzer:   geminiClient,
-			Images:     imgProc,
-			Log:        p.Log,
-			ReqTimeout: p.Config.RequestTimeout,
+			SubmitPhoto: p.SubmitPhoto,
+			Sender:      tgClient,
+			Log:         p.Log,
+			ReqTimeout:  p.Config.RequestTimeout,
 		}),
 	)
 
