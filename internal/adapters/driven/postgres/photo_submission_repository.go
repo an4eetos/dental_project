@@ -27,7 +27,7 @@ func (r *PhotoSubmissionRepository) Create(ctx context.Context, params photorevi
 	const q = `
 INSERT INTO photo_submissions (user_id, telegram_file_id, image_data, image_mime, status, created_at)
 VALUES ($1, $2, $3, $4, $5, NOW())
-RETURNING id, user_id, telegram_file_id, image_mime, status, ai_draft, doctor_response,
+RETURNING id, user_id, telegram_file_id, image_mime, status, ai_draft, COALESCE(doctor_response, ''),
           COALESCE(responded_by, 0), responded_at, created_at`
 
 	row := r.pool.QueryRow(ctx, q,
@@ -43,7 +43,7 @@ RETURNING id, user_id, telegram_file_id, image_mime, status, ai_draft, doctor_re
 func (r *PhotoSubmissionRepository) GetByID(ctx context.Context, id int64) (photoreview.SubmissionWithPatient, error) {
 	const q = `
 SELECT
-    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, s.doctor_response,
+    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
     COALESCE(s.responded_by, 0), s.responded_at, s.created_at,
     u.id, u.telegram_id, COALESCE(u.username, ''), u.first_name, COALESCE(u.last_name, '')
 FROM photo_submissions s
@@ -61,7 +61,7 @@ WHERE s.id = $1`
 func (r *PhotoSubmissionRepository) ListByStatus(ctx context.Context, status photoreview.Status) ([]photoreview.SubmissionWithPatient, error) {
 	const q = `
 SELECT
-    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, s.doctor_response,
+    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
     COALESCE(s.responded_by, 0), s.responded_at, s.created_at,
     u.id, u.telegram_id, COALESCE(u.username, ''), u.first_name, COALESCE(u.last_name, '')
 FROM photo_submissions s
