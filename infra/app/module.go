@@ -14,6 +14,7 @@ import (
 
 	"github.com/anuarkuanysh/dental_project/infra/admin"
 	"github.com/anuarkuanysh/dental_project/infra/config"
+	"github.com/anuarkuanysh/dental_project/infra/cron"
 	"github.com/anuarkuanysh/dental_project/infra/doctor"
 	infrahttp "github.com/anuarkuanysh/dental_project/infra/http"
 	"github.com/anuarkuanysh/dental_project/infra/postgresql"
@@ -63,6 +64,9 @@ func Module() fx.Option {
 			provideCreateAppointment,
 			provideListAppointments,
 			provideListForDoctor,
+			provideOfferAppointment,
+			provideSendAppointmentReminders,
+			provideAppointmentLocation,
 			provideSubmitPhoto,
 			provideListPendingSubmissions,
 			provideListAnsweredSubmissions,
@@ -82,7 +86,7 @@ func Module() fx.Option {
 			newGinEngine,
 			newHTTPServer,
 		),
-		fx.Invoke(runMigrations, startHTTPServer),
+		fx.Invoke(runMigrations, startHTTPServer, cron.RegisterAppointmentReminders),
 	)
 }
 
@@ -223,6 +227,43 @@ func provideListForDoctor(
 	return &appointmentuc.ListForDoctor{Appointments: repo, Users: users}
 }
 
+func provideOfferAppointment(
+	repo port.AppointmentRepository,
+	users port.UserRepository,
+	tg *telegrambot.Client,
+	clock port.Clock,
+) *appointmentuc.Offer {
+	return &appointmentuc.Offer{
+		Appointments: repo,
+		Users:        users,
+		Sender:       tg,
+		Clock:        clock,
+	}
+}
+
+func provideSendAppointmentReminders(
+	repo port.AppointmentRepository,
+	tg *telegrambot.Client,
+	clock port.Clock,
+	loc *time.Location,
+) *appointmentuc.SendReminders {
+	return &appointmentuc.SendReminders{
+		Appointments: repo,
+		Sender:       tg,
+		Clock:        clock,
+		Location:     loc,
+	}
+}
+
+func provideAppointmentLocation(cfg config.Config, log *slog.Logger) (*time.Location, error) {
+	loc, err := time.LoadLocation(cfg.AppointmentTimezone)
+	if err != nil {
+		log.Warn("invalid appointment timezone, falling back to UTC", "timezone", cfg.AppointmentTimezone, "err", err)
+		return time.UTC, nil
+	}
+	return loc, nil
+}
+
 func provideSubmitPhoto(
 	users port.UserRepository,
 	submissions port.PhotoSubmissionRepository,
@@ -321,11 +362,13 @@ func newAppointmentHandler(
 	create *appointmentuc.Create,
 	list *appointmentuc.ListMine,
 	listDoctor *appointmentuc.ListForDoctor,
+	offer *appointmentuc.Offer,
 ) *appointmenthandler.Handler {
 	return &appointmenthandler.Handler{
 		CreateUC:        create,
 		ListMineUC:      list,
 		ListForDoctorUC: listDoctor,
+		OfferUC:         offer,
 	}
 }
 

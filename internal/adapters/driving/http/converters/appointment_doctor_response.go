@@ -20,12 +20,13 @@ type DoctorAppointmentResponse struct {
 	PreferredDate string               `json:"preferred_date"`
 	PreferredTime string               `json:"preferred_time"`
 	Status        string               `json:"status"`
+	ZoomLink      string               `json:"zoom_link,omitempty"`
 	CreatedAt     time.Time            `json:"created_at"`
 	Patient       PatientBriefResponse `json:"patient"`
 }
 
 func ToDoctorAppointmentResponse(item booking.AppointmentWithPatient) DoctorAppointmentResponse {
-	return DoctorAppointmentResponse{
+	resp := DoctorAppointmentResponse{
 		ID:            item.Appointment.ID,
 		PreferredDate: item.Appointment.PreferredDate.UTC().Format(bookingvalidate.DateLayout),
 		PreferredTime: item.Appointment.PreferredTime.Format(bookingvalidate.TimeLayout),
@@ -39,6 +40,10 @@ func ToDoctorAppointmentResponse(item booking.AppointmentWithPatient) DoctorAppo
 			LastName:   item.Patient.LastName,
 		},
 	}
+	if item.Appointment.ZoomLink != "" {
+		resp.ZoomLink = item.Appointment.ZoomLink
+	}
+	return resp
 }
 
 func ToDoctorAppointmentListResponse(items []booking.AppointmentWithPatient) []DoctorAppointmentResponse {

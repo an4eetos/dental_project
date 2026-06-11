@@ -44,10 +44,13 @@ func statusForCode(code string) int {
 		domainerrors.ErrInvalidInitData.Code():
 		return http.StatusUnauthorized
 	case domainerrors.ErrInvalidPreferredDate.Code(),
-		domainerrors.ErrInvalidPreferredTime.Code():
+		domainerrors.ErrInvalidPreferredTime.Code(),
+		domainerrors.ErrInvalidZoomLink.Code(),
+		domainerrors.ErrAppointmentCancelled.Code():
 		return http.StatusBadRequest
 	case domainerrors.ErrUserNotFound.Code(),
-		domainerrors.ErrSubmissionNotFound.Code():
+		domainerrors.ErrSubmissionNotFound.Code(),
+		domainerrors.ErrAppointmentNotFound.Code():
 		return http.StatusNotFound
 	case domainerrors.ErrForbidden.Code():
 		return http.StatusForbidden

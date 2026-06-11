@@ -28,6 +28,9 @@ type Config struct {
 	DoctorTelegramIDs   []int64
 	AdminTelegramIDs    []int64
 	PredictionExamplesPath string
+
+	ReminderPollInterval time.Duration
+	AppointmentTimezone  string
 }
 
 // Load reads configuration from environment variables.
@@ -42,6 +45,8 @@ func Load() (Config, error) {
 		JWTTTL:                  getDurationEnv("JWT_TTL", 24*time.Hour),
 		TelegramAuthMaxAge:      getDurationEnv("TELEGRAM_AUTH_MAX_AGE", 24*time.Hour),
 		PredictionExamplesPath:  getEnv("PREDICTION_EXAMPLES_PATH", "data/prediction_examples.xlsx"),
+		ReminderPollInterval:    getDurationEnv("REMINDER_POLL_INTERVAL", 5*time.Minute),
+		AppointmentTimezone:     getEnv("APPOINTMENT_TIMEZONE", "UTC"),
 	}
 
 	cfg.TelegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")

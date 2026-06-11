@@ -42,6 +42,7 @@ export type Appointment = {
   preferred_date: string;
   preferred_time: string;
   status: string;
+  zoom_link?: string;
   created_at: string;
 };
 
@@ -186,6 +187,24 @@ export async function listAllAppointments(
   return request<{ appointments: DoctorAppointment[] }>("/appointments", {
     method: "GET",
     token,
+  });
+}
+
+export async function offerAppointment(
+  token: string,
+  appointmentId: number,
+  preferredDate: string,
+  preferredTime: string,
+  zoomLink: string,
+): Promise<DoctorAppointment> {
+  return request<DoctorAppointment>(`/appointments/${appointmentId}/offer`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({
+      preferred_date: preferredDate,
+      preferred_time: preferredTime,
+      zoom_link: zoomLink,
+    }),
   });
 }
 

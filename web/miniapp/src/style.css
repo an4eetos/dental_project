@@ -113,6 +113,13 @@ body[data-theme="dark"] {
   color: var(--muted);
 }
 
+.link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--primary);
+  word-break: break-all;
+}
+
 .item-title {
   margin: 0 0 4px;
   font-weight: 600;

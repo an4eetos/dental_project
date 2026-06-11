@@ -11,6 +11,7 @@ import {
   listAnsweredSubmissions,
   listMyAppointments,
   listPendingSubmissions,
+  offerAppointment,
   predict,
   respondToSubmission,
   type AdminStatistics,
@@ -161,6 +162,15 @@ function renderAppointmentsList(
       el("p", "item-title", `${a.preferred_date} в ${a.preferred_time}`),
       el("p", "muted", statusLabel(a.status)),
     );
+    if (a.status === "confirmed" && a.zoom_link) {
+      const link = document.createElement("a");
+      link.href = a.zoom_link;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "link";
+      link.textContent = "Открыть Zoom";
+      card.append(link);
+    }
     list.append(card);
   }
   return list;
@@ -480,7 +490,9 @@ function buildDoctorAppointmentsContent(token: string): HTMLElement {
     listHost.replaceChildren(el("p", "status", "Загрузка…"));
     try {
       const data = await listAllAppointments(token);
-      listHost.replaceChildren(renderDoctorAppointmentsList(data.appointments));
+      listHost.replaceChildren(
+        renderDoctorAppointmentsList(token, data.appointments, load),
+      );
     } catch (err) {
       listHost.replaceChildren(
         el(
@@ -756,7 +768,11 @@ function renderAdminStats(stats: AdminStatistics): HTMLElement {
   return grid;
 }
 
-function renderDoctorAppointmentsList(items: DoctorAppointment[]): HTMLElement {
+function renderDoctorAppointmentsList(
+  token: string,
+  items: DoctorAppointment[],
+  onBack: () => void,
+): HTMLElement {
   const list = el("section", "list");
   if (items.length === 0) {
     list.append(el("p", "muted", "Записей пока нет."));
@@ -769,9 +785,95 @@ function renderDoctorAppointmentsList(items: DoctorAppointment[]): HTMLElement {
       el("p", undefined, patientName(a.patient)),
       el("p", "muted", statusLabel(a.status)),
     );
+    if (a.status === "cancelled") {
+      list.append(card);
+      continue;
+    }
+    card.addEventListener("click", () => {
+      renderDoctorAppointmentOffer(token, a, onBack);
+    });
     list.append(card);
   }
   return list;
+}
+
+function renderDoctorAppointmentOffer(
+  token: string,
+  appointment: DoctorAppointment,
+  onBack: () => void,
+): void {
+  const shell = el("div", "stack");
+  renderShell(shell, "Подтверждение записи", patientName(appointment.patient));
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "button";
+  back.textContent = "← Назад к списку";
+  back.addEventListener("click", onBack);
+  shell.append(back);
+
+  const form = el("form", "card form");
+  const dateLabel = el("label", undefined, "Дата консультации");
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.required = true;
+  dateInput.min = minDate();
+  dateInput.max = maxDate();
+  dateInput.className = "input";
+  dateInput.value = appointment.preferred_date;
+
+  const timeLabel = el("label", undefined, "Время консультации");
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.required = true;
+  timeInput.min = "09:00";
+  timeInput.max = "20:00";
+  timeInput.step = "60";
+  timeInput.className = "input";
+  timeInput.value = appointment.preferred_time;
+
+  const zoomLabel = el("label", undefined, "Ссылка на Zoom");
+  const zoomInput = document.createElement("input");
+  zoomInput.type = "url";
+  zoomInput.required = true;
+  zoomInput.className = "input";
+  zoomInput.placeholder = "https://zoom.us/j/...";
+  zoomInput.value = appointment.zoom_link ?? "";
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "button primary";
+  submit.textContent =
+    appointment.status === "confirmed"
+      ? "Обновить и уведомить пациента"
+      : "Подтвердить и отправить пациенту";
+
+  const status = el("p", "status hidden");
+  form.append(dateLabel, dateInput, timeLabel, timeInput, zoomLabel, zoomInput, submit, status);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    submit.setAttribute("disabled", "true");
+    status.className = "status";
+    status.textContent = "Отправка…";
+    try {
+      await offerAppointment(
+        token,
+        appointment.id,
+        dateInput.value,
+        timeInput.value,
+        zoomInput.value.trim(),
+      );
+      status.textContent = "Пациент получил уведомление со ссылкой на Zoom.";
+      setTimeout(onBack, 900);
+    } catch (err) {
+      status.textContent =
+        err instanceof ApiError ? err.message : "Не удалось отправить предложение";
+      submit.removeAttribute("disabled");
+    }
+  });
+
+  shell.append(form);
 }
 
 async function ensureAuth(): Promise<AuthResponse> {

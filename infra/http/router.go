@@ -62,6 +62,10 @@ func NewRouter(p RouterParams) *gin.Engine {
 		jwtmiddleware.RequireDoctor(),
 		p.AppointmentH.ListForDoctor,
 	)
+	protected.PATCH("/appointments/:id/offer",
+		jwtmiddleware.RequireDoctor(),
+		p.AppointmentH.Offer,
+	)
 
 	if p.PhotoReviewH != nil {
 		doctor := protected.Group("/submissions")
