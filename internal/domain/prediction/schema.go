@@ -100,6 +100,7 @@ func ColumnToOutputKey(column string) (string, bool) {
 }
 
 func normalizeColumn(column string) string {
-	parts := strings.Fields(strings.TrimSpace(column))
+	trimmed := strings.TrimRight(strings.TrimSpace(column), ":：;.,")
+	parts := strings.Fields(trimmed)
 	return strings.Join(parts, " ")
 }
