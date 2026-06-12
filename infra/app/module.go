@@ -66,6 +66,7 @@ func Module() fx.Option {
 			provideListForDoctor,
 			provideOfferAppointment,
 			provideSendAppointmentReminders,
+			providePurgeOutdatedAppointments,
 			provideAppointmentLocation,
 			provideSubmitPhoto,
 			provideListPendingSubmissions,
@@ -86,7 +87,7 @@ func Module() fx.Option {
 			newGinEngine,
 			newHTTPServer,
 		),
-		fx.Invoke(runMigrations, startHTTPServer, cron.RegisterAppointmentReminders),
+		fx.Invoke(runMigrations, startHTTPServer, cron.RegisterAppointmentReminders, cron.RegisterAppointmentCleanup),
 	)
 }
 
@@ -250,6 +251,18 @@ func provideSendAppointmentReminders(
 	return &appointmentuc.SendReminders{
 		Appointments: repo,
 		Sender:       tg,
+		Clock:        clock,
+		Location:     loc,
+	}
+}
+
+func providePurgeOutdatedAppointments(
+	repo port.AppointmentRepository,
+	clock port.Clock,
+	loc *time.Location,
+) *appointmentuc.PurgeOutdated {
+	return &appointmentuc.PurgeOutdated{
+		Appointments: repo,
 		Clock:        clock,
 		Location:     loc,
 	}

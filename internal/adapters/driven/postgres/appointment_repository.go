@@ -166,6 +166,30 @@ ORDER BY a.preferred_date ASC, a.preferred_time ASC`
 	return out, rows.Err()
 }
 
+func (r *AppointmentRepository) DeleteScheduledBefore(
+	ctx context.Context,
+	before time.Time,
+	loc *time.Location,
+) (int64, error) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	local := before.In(loc)
+	y, m, d := local.Date()
+	cutoffDate := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+
+	const q = `
+DELETE FROM appointments
+WHERE preferred_date < $1::date
+   OR (preferred_date = $1::date AND preferred_time < $2::time)`
+
+	tag, err := r.pool.Exec(ctx, q, cutoffDate, formatTime(local))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *AppointmentRepository) MarkReminderSent(
 	ctx context.Context,
 	id int64,

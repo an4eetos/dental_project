@@ -16,4 +16,5 @@ type AppointmentRepository interface {
 	UpdateOffer(ctx context.Context, update booking.OfferUpdate) error
 	ListConfirmedWithZoomLink(ctx context.Context) ([]booking.AppointmentWithPatient, error)
 	MarkReminderSent(ctx context.Context, id int64, kind booking.ReminderKind, at time.Time) error
+	DeleteScheduledBefore(ctx context.Context, before time.Time, loc *time.Location) (int64, error)
 }
