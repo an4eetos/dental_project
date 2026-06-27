@@ -1,5 +1,5 @@
 import type { ContentBlock, ContentItem, SubscriptionStatus } from "../api";
-import { fetchContentMediaUrl } from "../api";
+import { getCachedContentMediaUrl } from "./cache";
 import { youtubeEmbedUrl, youtubeThumbnailUrl, youtubeWatchUrl } from "../youtube";
 
 type SubscriptionHandlers = {
@@ -128,7 +128,7 @@ async function renderBlock(block: ContentBlock, handlers: SubscriptionHandlers):
       const wrap = el("figure", "content-block content-block--image");
       if (!mediaId) return wrap;
       try {
-        const url = await fetchContentMediaUrl(handlers.token, mediaId);
+        const url = await getCachedContentMediaUrl(handlers.token, mediaId);
         const img = document.createElement("img");
         img.src = url;
         img.alt = String(block.data.caption ?? "");
@@ -147,7 +147,7 @@ async function renderBlock(block: ContentBlock, handlers: SubscriptionHandlers):
       const wrap = el("figure", "content-block content-block--video");
       if (!mediaId) return wrap;
       try {
-        const url = await fetchContentMediaUrl(handlers.token, mediaId);
+        const url = await getCachedContentMediaUrl(handlers.token, mediaId);
         const video = document.createElement("video");
         video.src = url;
         video.controls = true;

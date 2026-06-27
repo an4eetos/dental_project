@@ -2,12 +2,17 @@ import {
   createAdminContent,
   deleteAdminContent,
   getAdminContent,
-  listAdminContent,
   reorderAdminContent,
   updateAdminContent,
   type AdminContentItem,
   type SaveContentPayload,
 } from "../api";
+import {
+  getAdminContentList,
+  invalidateAdminContentCache,
+  invalidatePatientContentCache,
+  peekAdminContent,
+} from "../content/cache";
 import { createBlockEditor } from "./block-editor";
 
 type AdminContentTab = "list" | "edit";
@@ -62,12 +67,19 @@ function buildAdminContentList(
   toolbar.append(createBtn, refreshBtn);
   wrap.append(toolbar, errorHost, listHost);
 
-  const load = async () => {
+  const load = async (force = false) => {
     errorHost.classList.add("hidden");
+
+    const cached = !force ? peekAdminContent(token) : null;
+    if (cached) {
+      renderList(cached);
+      return;
+    }
+
     listHost.replaceChildren(el("p", "muted", "Загрузка…"));
     try {
-      const data = await listAdminContent(token);
-      renderList(data.items);
+      const items = await getAdminContentList(token, { force });
+      renderList(items);
     } catch (err) {
       errorHost.textContent = err instanceof Error ? err.message : "Ошибка загрузки";
       errorHost.classList.remove("hidden");
@@ -125,10 +137,15 @@ function buildAdminContentList(
       deleteBtn.textContent = "Удалить";
       deleteBtn.addEventListener("click", () => {
         if (!window.confirm(`Удалить «${item.title}»?`)) return;
-        void deleteAdminContent(token, item.id).then(load).catch((err) => {
-          errorHost.textContent = err instanceof Error ? err.message : "Ошибка удаления";
-          errorHost.classList.remove("hidden");
-        });
+        void deleteAdminContent(token, item.id)
+          .then(() => {
+            invalidateAdminContentCache();
+            return load(true);
+          })
+          .catch((err) => {
+            errorHost.textContent = err instanceof Error ? err.message : "Ошибка удаления";
+            errorHost.classList.remove("hidden");
+          });
       });
 
       actions.append(editBtn, upBtn, downBtn, deleteBtn);
@@ -138,7 +155,7 @@ function buildAdminContentList(
     listHost.append(list);
   };
 
-  refreshBtn.addEventListener("click", () => void load());
+  refreshBtn.addEventListener("click", () => void load(true));
   void load();
   return wrap;
 }
@@ -148,12 +165,13 @@ async function reorder(
   items: AdminContentItem[],
   from: number,
   to: number,
-  reload: () => void,
+  reload: (force?: boolean) => void,
 ): Promise<void> {
   const ids = items.map((item) => item.id);
   [ids[from], ids[to]] = [ids[to], ids[from]];
   await reorderAdminContent(token, ids);
-  reload();
+  invalidateAdminContentCache();
+  reload(true);
 }
 
 function buildAdminContentEditor(
@@ -259,7 +277,11 @@ function buildAdminContentEditor(
       ? updateAdminContent(token, editingId, payload)
       : createAdminContent(token, payload);
     void savePromise
-      .then(() => onBack())
+      .then(() => {
+        invalidateAdminContentCache();
+        invalidatePatientContentCache();
+        onBack();
+      })
       .catch((err) => {
         errorHost.textContent = err instanceof Error ? err.message : "Ошибка сохранения";
         errorHost.classList.remove("hidden");

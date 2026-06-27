@@ -9,7 +9,6 @@ import {
   getAdminStatistics,
   getAdminUser,
   listAdminUsers,
-  listContent,
   setAdminUserBlocked,
   updateAdminUser,
   getSubmission,
@@ -39,6 +38,11 @@ import {
 } from "./admin/content-ui";
 import { renderContentItemCard } from "./content/render-patient";
 import {
+  getPatientContent,
+  invalidatePatientContentCache,
+  peekPatientContent,
+} from "./content/cache";
+import {
   PREDICTION_INPUT_FIELDS,
   PREDICTION_OUTPUT_FIELDS,
   type PredictionInputKey,
@@ -51,7 +55,11 @@ let subscriptionCache: SubscriptionStatus | null = null;
 
 async function refreshSubscription(token: string): Promise<SubscriptionStatus> {
   const status = await getSubscriptionStatus(token);
+  const prevActive = subscriptionCache?.active;
   subscriptionCache = status;
+  if (prevActive !== status.active) {
+    invalidatePatientContentCache();
+  }
   return status;
 }
 
@@ -413,15 +421,13 @@ async function loadVideosContent(
   onSubscriptionChange: () => void,
   listHost: HTMLElement,
 ): Promise<void> {
-  listHost.replaceChildren(el("p", "muted", "Загрузка материалов…"));
-  try {
-    const data = await listContent(token);
+  const renderItems = (items: import("./api").ContentItem[]) => {
     listHost.replaceChildren();
-    if (data.items.length === 0) {
+    if (items.length === 0) {
       listHost.append(el("p", "muted", "Материалы скоро появятся."));
       return;
     }
-    for (const item of data.items) {
+    for (const item of items) {
       listHost.append(
         renderContentItemCard(item, {
           token,
@@ -431,6 +437,18 @@ async function loadVideosContent(
         }),
       );
     }
+  };
+
+  const cached = peekPatientContent(token, subscription.active);
+  if (cached) {
+    renderItems(cached);
+    return;
+  }
+
+  listHost.replaceChildren(el("p", "muted", "Загрузка материалов…"));
+  try {
+    const items = await getPatientContent(token, subscription.active);
+    renderItems(items);
   } catch (err) {
     listHost.replaceChildren(
       el(
@@ -464,7 +482,7 @@ function renderPatientShell(token: string, activeTab: PatientTab): void {
 
 async function renderPatientShellAsync(token: string, activeTab: PatientTab): Promise<void> {
   let subscription = subscriptionCache;
-  if (!subscription || activeTab === "videos") {
+  if (!subscription) {
     try {
       subscription = await refreshSubscription(token);
     } catch (err) {
