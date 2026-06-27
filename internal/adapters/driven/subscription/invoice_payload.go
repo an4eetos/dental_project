@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"strings"
 	"time"
@@ -13,7 +14,13 @@ import (
 	"github.com/anuarkuanysh/dental_project/internal/port"
 )
 
-const invoicePayloadMaxAge = 15 * time.Minute
+const (
+	invoicePayloadMaxAge = 15 * time.Minute
+	invoicePayloadMaxLen = 128
+	payloadVersion       = byte(1)
+	payloadBodyLen       = 1 + 8 + 4 + 8 // version + userID + issuedAt + nonce
+	payloadTotalLen      = payloadBodyLen + 8
+)
 
 type invoicePayload struct {
 	UserID   int64  `json:"user_id"`
@@ -33,26 +40,67 @@ func NewInvoicePayloadSigner(secret string) *InvoicePayloadSigner {
 var _ port.InvoicePayloadSigner = (*InvoicePayloadSigner)(nil)
 
 func (s *InvoicePayloadSigner) Sign(userID int64) (string, error) {
-	nonce := make([]byte, 16)
+	if userID <= 0 {
+		return "", domainerrors.ErrInvalidPaymentPayload
+	}
+
+	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	payload := invoicePayload{
-		UserID:   userID,
-		IssuedAt: time.Now().Unix(),
-		Nonce:    base64.RawURLEncoding.EncodeToString(nonce),
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
+
+	body := make([]byte, payloadBodyLen)
+	body[0] = payloadVersion
+	binary.BigEndian.PutUint64(body[1:], uint64(userID))
+	binary.BigEndian.PutUint32(body[9:], uint32(time.Now().Unix()))
+	copy(body[13:], nonce)
+
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write(raw)
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return base64.RawURLEncoding.EncodeToString(raw) + "." + sig, nil
+	mac.Write(body)
+	token := append(body, mac.Sum(nil)[:8]...)
+
+	encoded := base64.RawURLEncoding.EncodeToString(token)
+	if len(encoded) > invoicePayloadMaxLen {
+		return "", domainerrors.ErrInvalidPaymentPayload
+	}
+	return encoded, nil
 }
 
 func (s *InvoicePayloadSigner) Verify(encoded string) (int64, error) {
+	if userID, err := s.verifyCompact(encoded); err == nil {
+		return userID, nil
+	}
+	return s.verifyLegacy(encoded)
+}
+
+func (s *InvoicePayloadSigner) verifyCompact(encoded string) (int64, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(raw) != payloadTotalLen || raw[0] != payloadVersion {
+		return 0, domainerrors.ErrInvalidPaymentPayload
+	}
+
+	body := raw[:payloadBodyLen]
+	sig := raw[payloadBodyLen:]
+
+	mac := hmac.New(sha256.New, s.secret)
+	mac.Write(body)
+	if !hmac.Equal(sig, mac.Sum(nil)[:8]) {
+		return 0, domainerrors.ErrInvalidPaymentPayload
+	}
+
+	userID := int64(binary.BigEndian.Uint64(body[1:9]))
+	if userID <= 0 {
+		return 0, domainerrors.ErrInvalidPaymentPayload
+	}
+
+	issuedAt := time.Unix(int64(binary.BigEndian.Uint32(body[9:13])), 0)
+	if time.Since(issuedAt) > invoicePayloadMaxAge {
+		return 0, domainerrors.ErrInvalidPaymentPayload
+	}
+	return userID, nil
+}
+
+func (s *InvoicePayloadSigner) verifyLegacy(encoded string) (int64, error) {
 	parts := strings.Split(encoded, ".")
 	if len(parts) != 2 {
 		return 0, domainerrors.ErrInvalidPaymentPayload

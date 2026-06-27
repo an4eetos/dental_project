@@ -47,6 +47,9 @@ func (h *Handler) CreateInvoice(c *gin.Context) {
 	}
 	result, err := h.CreateInvoiceUC.Execute(c.Request.Context(), userID)
 	if err != nil {
+		if h.Log != nil {
+			h.Log.Warn("subscription invoice failed", "user_id", userID, "err", err)
+		}
 		httperrors.Write(c, err)
 		return
 	}

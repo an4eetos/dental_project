@@ -7,6 +7,7 @@ import (
 	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
+	subscriptionservice "github.com/anuarkuanysh/dental_project/internal/service/subscription"
 )
 
 // PlanConfig holds subscription pricing exposed to clients.
@@ -37,19 +38,25 @@ func (uc *CreateInvoice) Execute(ctx context.Context, userID int64) (CreateInvoi
 	if user.Role != identity.RolePatient {
 		return CreateInvoiceResult{}, domainerrors.ErrForbidden
 	}
+	if uc.Plan.StarsPrice <= 0 {
+		return CreateInvoiceResult{}, domainerrors.ErrInvoiceLinkFailed
+	}
 
 	payload, err := uc.Signer.Sign(userID)
 	if err != nil {
 		return CreateInvoiceResult{}, err
 	}
+	if len(payload) > subscriptionservice.MaxInvoicePayloadLen {
+		return CreateInvoiceResult{}, domainerrors.ErrInvalidPaymentPayload
+	}
 
 	link, err := uc.Payments.CreateInvoiceLink(ctx, port.CreateInvoiceLinkParams{
-		Title:       uc.Plan.InvoiceTitle,
-		Description: uc.Plan.InvoiceDesc,
+		Title:       subscriptionservice.TruncateInvoiceTitle(uc.Plan.InvoiceTitle),
+		Description: subscriptionservice.TruncateInvoiceDescription(uc.Plan.InvoiceDesc),
 		Payload:     payload,
 		Currency:    "XTR",
 		Prices: []port.LabeledPrice{{
-			Label:  uc.Plan.InvoiceTitle,
+			Label:  subscriptionservice.TruncateInvoiceTitle(uc.Plan.InvoiceTitle),
 			Amount: uc.Plan.StarsPrice,
 		}},
 	})

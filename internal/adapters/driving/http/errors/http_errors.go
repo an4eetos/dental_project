@@ -72,8 +72,11 @@ func statusForCode(code string) int {
 		return http.StatusBadRequest
 	case domainerrors.ErrNoPredictionExamples.Code(),
 		domainerrors.ErrPredictionFailed.Code(),
-		domainerrors.ErrDraftGenerationFailed.Code():
+		domainerrors.ErrDraftGenerationFailed.Code(),
+		domainerrors.ErrTelegramPaymentsUnavailable.Code():
 		return http.StatusServiceUnavailable
+	case domainerrors.ErrInvoiceLinkFailed.Code():
+		return http.StatusBadGateway
 	default:
 		return http.StatusInternalServerError
 	}

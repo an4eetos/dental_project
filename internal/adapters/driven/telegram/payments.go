@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
+	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 )
 
@@ -31,15 +33,6 @@ type labeledPrice struct {
 	Amount int    `json:"amount"`
 }
 
-type createInvoiceLinkRequest struct {
-	Title         string         `json:"title"`
-	Description   string         `json:"description"`
-	Payload       string         `json:"payload"`
-	ProviderToken string         `json:"provider_token"`
-	Currency      string         `json:"currency"`
-	Prices        []labeledPrice `json:"prices"`
-}
-
 type answerPreCheckoutRequest struct {
 	PreCheckoutQueryID string `json:"pre_checkout_query_id"`
 	OK                 bool   `json:"ok"`
@@ -57,14 +50,19 @@ func (c *PaymentsClient) CreateInvoiceLink(ctx context.Context, params port.Crea
 	for i, p := range params.Prices {
 		prices[i] = labeledPrice{Label: p.Label, Amount: p.Amount}
 	}
-	body := createInvoiceLinkRequest{
-		Title:         params.Title,
-		Description:   params.Description,
-		Payload:       params.Payload,
-		ProviderToken: "",
-		Currency:      params.Currency,
-		Prices:        prices,
+
+	body := map[string]any{
+		"title":       params.Title,
+		"description": params.Description,
+		"payload":     params.Payload,
+		"currency":    params.Currency,
+		"prices":      prices,
 	}
+	// Telegram Stars (XTR): provider_token must be omitted entirely.
+	if !strings.EqualFold(params.Currency, "XTR") {
+		body["provider_token"] = ""
+	}
+
 	var link string
 	if err := c.call(ctx, "createInvoiceLink", body, &link); err != nil {
 		return "", err
@@ -95,27 +93,27 @@ func (c *PaymentsClient) call(ctx context.Context, method string, payload any, r
 
 	resp, err := c.httpCl.Do(req)
 	if err != nil {
-		return fmt.Errorf("telegram api: %w", err)
+		return domainerrors.ErrTelegramPaymentsUnavailable
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+		return domainerrors.ErrTelegramPaymentsUnavailable
 	}
 	var apiResp apiResponse
 	if err := json.Unmarshal(raw, &apiResp); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+		return domainerrors.ErrTelegramPaymentsUnavailable
 	}
 	if !apiResp.OK {
 		if apiResp.Description != "" {
-			return fmt.Errorf("telegram api %s: %s", method, apiResp.Description)
+			return fmt.Errorf("%w: %s", domainerrors.ErrInvoiceLinkFailed, apiResp.Description)
 		}
-		return fmt.Errorf("telegram api %s failed", method)
+		return domainerrors.ErrInvoiceLinkFailed
 	}
 	if result != nil && len(apiResp.Result) > 0 {
 		if err := json.Unmarshal(apiResp.Result, result); err != nil {
-			return fmt.Errorf("decode result: %w", err)
+			return domainerrors.ErrTelegramPaymentsUnavailable
 		}
 	}
 	return nil
