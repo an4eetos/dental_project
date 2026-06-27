@@ -26,6 +26,12 @@ interface TelegramWebApp {
   };
   showAlert(message: string, cb?: () => void): void;
   openLink(url: string, options?: { try_instant_view?: boolean }): void;
+  openInvoice(
+    url: string,
+    callback?: (status: "paid" | "cancelled" | "failed" | "pending") => void,
+  ): void;
+  onEvent(eventType: "invoiceClosed", callback: (data: { status: string }) => void): void;
+  offEvent(eventType: "invoiceClosed", callback: (data: { status: string }) => void): void;
   themeParams: Record<string, string>;
   colorScheme: "light" | "dark";
 }

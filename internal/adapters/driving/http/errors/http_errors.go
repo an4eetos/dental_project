@@ -46,7 +46,11 @@ func statusForCode(code string) int {
 	case domainerrors.ErrInvalidPreferredDate.Code(),
 		domainerrors.ErrInvalidPreferredTime.Code(),
 		domainerrors.ErrInvalidZoomLink.Code(),
-		domainerrors.ErrAppointmentCancelled.Code():
+		domainerrors.ErrInvalidDecision.Code(),
+		domainerrors.ErrDoctorNotesRequired.Code(),
+		domainerrors.ErrAppointmentCancelled.Code(),
+		domainerrors.ErrAppointmentNotPending.Code(),
+		domainerrors.ErrAppointmentNotVideo.Code():
 		return http.StatusBadRequest
 	case domainerrors.ErrUserNotFound.Code(),
 		domainerrors.ErrSubmissionNotFound.Code(),
@@ -54,6 +58,15 @@ func statusForCode(code string) int {
 		return http.StatusNotFound
 	case domainerrors.ErrForbidden.Code():
 		return http.StatusForbidden
+	case domainerrors.ErrUserBlocked.Code(),
+		domainerrors.ErrSubscriptionRequired.Code(),
+		domainerrors.ErrInvalidPaymentPayload.Code():
+		return http.StatusForbidden
+	case domainerrors.ErrCannotBlockSelf.Code(),
+		domainerrors.ErrCannotBlockAdmin.Code(),
+		domainerrors.ErrInvalidRole.Code(),
+		domainerrors.ErrInvalidProfile.Code():
+		return http.StatusBadRequest
 	case domainerrors.ErrSubmissionAlreadyAnswered.Code(),
 		domainerrors.ErrEmptyDoctorResponse.Code():
 		return http.StatusBadRequest

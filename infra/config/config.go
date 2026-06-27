@@ -32,6 +32,12 @@ type Config struct {
 	ReminderPollInterval         time.Duration
 	AppointmentCleanupInterval   time.Duration
 	AppointmentTimezone          string
+
+	SubscriptionStarsPrice   int
+	SubscriptionDuration     time.Duration
+	SubscriptionInvoiceTitle string
+	SubscriptionInvoiceDesc  string
+	SubscriptionInvoiceSecret string
 }
 
 // Load reads configuration from environment variables.
@@ -49,6 +55,10 @@ func Load() (Config, error) {
 		ReminderPollInterval:       getDurationEnv("REMINDER_POLL_INTERVAL", 5*time.Minute),
 		AppointmentCleanupInterval: getDurationEnv("APPOINTMENT_CLEANUP_INTERVAL", 24*time.Hour),
 		AppointmentTimezone:        getEnv("APPOINTMENT_TIMEZONE", "UTC"),
+		SubscriptionStarsPrice:     getIntEnv("SUBSCRIPTION_STARS_PRICE", 50),
+		SubscriptionDuration:     getDurationEnv("SUBSCRIPTION_DURATION", 30*24*time.Hour),
+		SubscriptionInvoiceTitle:   getEnv("SUBSCRIPTION_INVOICE_TITLE", "Подписка на эксклюзивные видео"),
+		SubscriptionInvoiceDesc:    getEnv("SUBSCRIPTION_INVOICE_DESC", "Доступ к обучающим материалам для подписчиков"),
 	}
 
 	cfg.TelegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -71,6 +81,11 @@ func Load() (Config, error) {
 	cfg.JWTSecret = os.Getenv("JWT_SECRET")
 	if len(cfg.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET is required and must be at least 32 characters")
+	}
+
+	cfg.SubscriptionInvoiceSecret = os.Getenv("SUBSCRIPTION_INVOICE_SECRET")
+	if cfg.SubscriptionInvoiceSecret == "" {
+		cfg.SubscriptionInvoiceSecret = cfg.JWTSecret
 	}
 
 	cfg.CORSAllowOrigins = parseCSV(os.Getenv("CORS_ALLOW_ORIGINS"))

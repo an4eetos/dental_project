@@ -2,25 +2,29 @@ package appointment
 
 import (
 	"context"
+	"strings"
 
-	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/booking"
-	bookingvalidate "github.com/anuarkuanysh/dental_project/internal/service/booking"
+	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
+	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
+	bookingvalidate "github.com/anuarkuanysh/dental_project/internal/service/booking"
 )
 
 // Create books a new appointment for an authenticated user.
 type Create struct {
 	Appointments port.AppointmentRepository
 	Users        port.UserRepository
+	Doctors      port.DoctorRegistry
+	Sender       port.MessageSender
 	Clock        port.Clock
 }
 
 // CreateInput is the usecase input (raw strings validated in service layer).
 type CreateInput struct {
-	UserID          int64
-	PreferredDate   string
-	PreferredTime   string
+	UserID        int64
+	PreferredDate string
+	PreferredTime string
 }
 
 func (uc *Create) Execute(ctx context.Context, in CreateInput) (booking.Appointment, error) {
@@ -50,5 +54,27 @@ func (uc *Create) Execute(ctx context.Context, in CreateInput) (booking.Appointm
 		CreatedAt:     now.UTC(),
 	}
 
-	return uc.Appointments.Create(ctx, appt)
+	created, err := uc.Appointments.Create(ctx, appt)
+	if err != nil {
+		return booking.Appointment{}, err
+	}
+
+	dateStr := date.Format(bookingvalidate.DateLayout)
+	timeStr := slot.Format(bookingvalidate.TimeLayout)
+	patientName := formatPatientName(user)
+	doctorMessage := bookingvalidate.FormatNewRequestDoctorMessage(patientName, dateStr, timeStr)
+	for _, telegramID := range uc.Doctors.TelegramIDs() {
+		_ = uc.Sender.SendText(ctx, telegramID, doctorMessage)
+	}
+
+	return created, nil
+}
+
+func formatPatientName(user identity.User) string {
+	parts := []string{user.FirstName, user.LastName}
+	name := strings.TrimSpace(strings.Join(parts, " "))
+	if user.Username != "" {
+		return name + " (@" + user.Username + ")"
+	}
+	return name
 }

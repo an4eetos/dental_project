@@ -9,11 +9,13 @@ import (
 	httperrors "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/errors"
 	"github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/converters"
 	authuc "github.com/anuarkuanysh/dental_project/internal/usecase/auth"
+	subscriptionuc "github.com/anuarkuanysh/dental_project/internal/usecase/subscription"
 )
 
 type Handler struct {
-	Login *authuc.TelegramLogin
-	Log   *slog.Logger
+	Login     *authuc.TelegramLogin
+	GetStatus *subscriptionuc.GetStatus
+	Log       *slog.Logger
 }
 
 type telegramAuthRequest struct {
@@ -59,5 +61,14 @@ func (h *Handler) Telegram(c *gin.Context) {
 		"telegram_id", result.User.TelegramID,
 		"role", result.User.Role,
 	)
-	c.JSON(http.StatusOK, converters.ToAuthTelegramResponse(result))
+
+	var subResp *converters.SubscriptionStatusResponse
+	if h.GetStatus != nil {
+		if status, err := h.GetStatus.Execute(c.Request.Context(), result.User); err == nil {
+			converted := converters.ToSubscriptionStatusResponse(status)
+			subResp = &converted
+		}
+	}
+
+	c.JSON(http.StatusOK, converters.ToAuthTelegramResponse(result, subResp))
 }

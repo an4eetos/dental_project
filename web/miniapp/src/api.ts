@@ -35,6 +35,18 @@ export type AuthResponse = {
   access_token: string;
   expires_at: string;
   user: User;
+  subscription?: SubscriptionStatus;
+};
+
+export type SubscriptionStatus = {
+  active: boolean;
+  expires_at?: string;
+  stars_price: number;
+  duration_days: number;
+};
+
+export type CreateInvoiceResponse = {
+  invoice_link: string;
 };
 
 export type Appointment = {
@@ -42,11 +54,14 @@ export type Appointment = {
   preferred_date: string;
   preferred_time: string;
   status: string;
+  visit_type?: "in_person" | "video";
   zoom_link?: string;
+  doctor_notes?: string;
   created_at: string;
 };
 
 export type DoctorAppointment = Appointment & {
+  needs_zoom_link?: boolean;
   patient: {
     id: number;
     telegram_id: number;
@@ -190,22 +205,49 @@ export async function listAllAppointments(
   });
 }
 
-export async function offerAppointment(
+export type AppointmentDecision = "in_person" | "video" | "reject";
+
+export async function respondAppointment(
   token: string,
   appointmentId: number,
-  preferredDate: string,
-  preferredTime: string,
-  zoomLink: string,
+  body: {
+    decision: AppointmentDecision;
+    preferred_date?: string;
+    preferred_time?: string;
+    zoom_link?: string;
+    doctor_notes?: string;
+  },
 ): Promise<DoctorAppointment> {
-  return request<DoctorAppointment>(`/appointments/${appointmentId}/offer`, {
+  return request<DoctorAppointment>(`/appointments/${appointmentId}/respond`, {
     method: "PATCH",
     token,
-    body: JSON.stringify({
-      preferred_date: preferredDate,
-      preferred_time: preferredTime,
-      zoom_link: zoomLink,
-    }),
+    body: JSON.stringify(body),
   });
+}
+
+export async function setAppointmentZoomLink(
+  token: string,
+  appointmentId: number,
+  zoomLink: string,
+): Promise<DoctorAppointment> {
+  return request<DoctorAppointment>(`/appointments/${appointmentId}/zoom-link`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ zoom_link: zoomLink }),
+  });
+}
+
+export async function suggestAppointmentSlots(
+  token: string,
+  appointmentId: number,
+): Promise<{ suggested_text: string }> {
+  return request<{ suggested_text: string }>(
+    `/appointments/${appointmentId}/suggest-slots`,
+    {
+      method: "POST",
+      token,
+    },
+  );
 }
 
 export type PredictRequest = {
@@ -347,5 +389,96 @@ export async function getAdminStatistics(token: string): Promise<AdminStatistics
   return request<AdminStatistics>("/admin/statistics", {
     method: "GET",
     token,
+  });
+}
+
+export type AdminUser = {
+  id: number;
+  telegram_id: number;
+  role: UserRole;
+  username?: string;
+  first_name: string;
+  last_name?: string;
+  avatar_url?: string;
+  blocked: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminUserOverview = AdminUser & {
+  appointment_count: number;
+  photo_submission_count: number;
+};
+
+export type AdminUserListResponse = {
+  users: AdminUser[];
+};
+
+export async function listAdminUsers(
+  token: string,
+  params: { search?: string; role?: UserRole; limit?: number; offset?: number } = {},
+): Promise<AdminUserListResponse> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.role) query.set("role", params.role);
+  if (params.limit != null) query.set("limit", String(params.limit));
+  if (params.offset != null) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return request<AdminUserListResponse>(`/admin/users${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    token,
+  });
+}
+
+export async function getAdminUser(token: string, userId: number): Promise<AdminUserOverview> {
+  return request<AdminUserOverview>(`/admin/users/${userId}`, {
+    method: "GET",
+    token,
+  });
+}
+
+export async function updateAdminUser(
+  token: string,
+  userId: number,
+  body: {
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    role?: UserRole;
+  },
+): Promise<AdminUser> {
+  return request<AdminUser>(`/admin/users/${userId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function setAdminUserBlocked(
+  token: string,
+  userId: number,
+  blocked: boolean,
+): Promise<AdminUser> {
+  return request<AdminUser>(`/admin/users/${userId}/block`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ blocked }),
+  });
+}
+
+export async function getSubscriptionStatus(token: string): Promise<SubscriptionStatus> {
+  return request<SubscriptionStatus>("/subscription/me", {
+    method: "GET",
+    token,
+  });
+}
+
+export async function createSubscriptionInvoice(
+  token: string,
+): Promise<CreateInvoiceResponse> {
+  return request<CreateInvoiceResponse>("/subscription/invoice", {
+    method: "POST",
+    token,
+    body: JSON.stringify({}),
   });
 }

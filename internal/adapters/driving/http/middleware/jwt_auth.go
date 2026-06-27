@@ -113,7 +113,7 @@ func CORS(log *slog.Logger, allowOrigins []string) gin.HandlerFunc {
 			}
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {
 			if origin != "" {

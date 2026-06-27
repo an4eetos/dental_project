@@ -3,8 +3,8 @@ package appointment
 import (
 	"context"
 
-	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/booking"
+	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 )

@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/converters"
 	httperrors "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/errors"
 	jwtmiddleware "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/middleware"
-	"github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/converters"
 	appointmentuc "github.com/anuarkuanysh/dental_project/internal/usecase/appointment"
 )
 
@@ -16,7 +16,9 @@ type Handler struct {
 	CreateUC        *appointmentuc.Create
 	ListMineUC      *appointmentuc.ListMine
 	ListForDoctorUC *appointmentuc.ListForDoctor
-	OfferUC         *appointmentuc.Offer
+	RespondUC       *appointmentuc.Respond
+	SetZoomLinkUC   *appointmentuc.SetZoomLink
+	SuggestSlotsUC  *appointmentuc.SuggestSlots
 }
 
 type createAppointmentRequest struct {
@@ -24,10 +26,16 @@ type createAppointmentRequest struct {
 	PreferredTime string `json:"preferred_time" binding:"required"`
 }
 
-type offerAppointmentRequest struct {
-	PreferredDate string `json:"preferred_date" binding:"required"`
-	PreferredTime string `json:"preferred_time" binding:"required"`
-	ZoomLink      string `json:"zoom_link" binding:"required"`
+type respondAppointmentRequest struct {
+	Decision      string `json:"decision" binding:"required"`
+	PreferredDate string `json:"preferred_date"`
+	PreferredTime string `json:"preferred_time"`
+	ZoomLink      string `json:"zoom_link"`
+	DoctorNotes   string `json:"doctor_notes"`
+}
+
+type setZoomLinkRequest struct {
+	ZoomLink string `json:"zoom_link" binding:"required"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -93,36 +101,68 @@ func (h *Handler) ListForDoctor(c *gin.Context) {
 	})
 }
 
-func (h *Handler) Offer(c *gin.Context) {
+func (h *Handler) Respond(c *gin.Context) {
 	userID, ok := jwtmiddleware.MustUserID(c)
 	if !ok {
 		httperrors.Write(c, httperrors.Unauthorized())
 		return
 	}
 
-	appointmentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || appointmentID <= 0 {
-		c.JSON(http.StatusBadRequest, httperrors.APIError{
-			Code:    "validation_error",
-			Message: "invalid appointment id",
-		})
+	appointmentID, err := parseAppointmentID(c)
+	if err != nil {
 		return
 	}
 
-	var req offerAppointmentRequest
+	var req respondAppointmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, httperrors.APIError{
 			Code:    "validation_error",
-			Message: "preferred_date, preferred_time and zoom_link are required",
+			Message: "decision is required",
 		})
 		return
 	}
 
-	item, err := h.OfferUC.Execute(c.Request.Context(), appointmentuc.OfferInput{
+	item, err := h.RespondUC.Execute(c.Request.Context(), appointmentuc.RespondInput{
 		DoctorUserID:  userID,
 		AppointmentID: appointmentID,
+		Decision:      req.Decision,
 		PreferredDate: req.PreferredDate,
 		PreferredTime: req.PreferredTime,
+		ZoomLink:      req.ZoomLink,
+		DoctorNotes:   req.DoctorNotes,
+	})
+	if err != nil {
+		httperrors.Write(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, converters.ToDoctorAppointmentResponse(item))
+}
+
+func (h *Handler) SetZoomLink(c *gin.Context) {
+	userID, ok := jwtmiddleware.MustUserID(c)
+	if !ok {
+		httperrors.Write(c, httperrors.Unauthorized())
+		return
+	}
+
+	appointmentID, err := parseAppointmentID(c)
+	if err != nil {
+		return
+	}
+
+	var req setZoomLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, httperrors.APIError{
+			Code:    "validation_error",
+			Message: "zoom_link is required",
+		})
+		return
+	}
+
+	item, err := h.SetZoomLinkUC.Execute(c.Request.Context(), appointmentuc.SetZoomLinkInput{
+		DoctorUserID:  userID,
+		AppointmentID: appointmentID,
 		ZoomLink:      req.ZoomLink,
 	})
 	if err != nil {
@@ -131,4 +171,37 @@ func (h *Handler) Offer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, converters.ToDoctorAppointmentResponse(item))
+}
+
+func (h *Handler) SuggestSlots(c *gin.Context) {
+	userID, ok := jwtmiddleware.MustUserID(c)
+	if !ok {
+		httperrors.Write(c, httperrors.Unauthorized())
+		return
+	}
+
+	appointmentID, err := parseAppointmentID(c)
+	if err != nil {
+		return
+	}
+
+	result, err := h.SuggestSlotsUC.Execute(c.Request.Context(), userID, appointmentID)
+	if err != nil {
+		httperrors.Write(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"suggested_text": result.SuggestedText})
+}
+
+func parseAppointmentID(c *gin.Context) (int64, error) {
+	appointmentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || appointmentID <= 0 {
+		c.JSON(http.StatusBadRequest, httperrors.APIError{
+			Code:    "validation_error",
+			Message: "invalid appointment id",
+		})
+		return 0, err
+	}
+	return appointmentID, nil
 }

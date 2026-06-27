@@ -20,12 +20,14 @@ import (
 	"github.com/anuarkuanysh/dental_project/infra/postgresql"
 	"github.com/anuarkuanysh/dental_project/internal/adapters/driven/jwt"
 	postgresadapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/postgres"
+	subscriptionadapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/subscription"
 	telegramadapter "github.com/anuarkuanysh/dental_project/internal/adapters/driven/telegram"
 	adminhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/admin"
 	appointmenthandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/appointment"
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
 	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
 	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
+	subscriptionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/subscription"
 	"github.com/anuarkuanysh/dental_project/internal/gemini"
 	"github.com/anuarkuanysh/dental_project/internal/imageproc"
 	"github.com/anuarkuanysh/dental_project/internal/port"
@@ -35,6 +37,7 @@ import (
 	appointmentuc "github.com/anuarkuanysh/dental_project/internal/usecase/appointment"
 	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
 	predictionuc "github.com/anuarkuanysh/dental_project/internal/usecase/prediction"
+	subscriptionuc "github.com/anuarkuanysh/dental_project/internal/usecase/subscription"
 	pkgclock "github.com/anuarkuanysh/dental_project/pkg/clock"
 )
 
@@ -52,6 +55,10 @@ func Module() fx.Option {
 			provideAppointmentRepo,
 			providePhotoSubmissionRepo,
 			provideStatsRepo,
+			provideSubscriptionRepo,
+			provideInvoicePayloadSigner,
+			provideTelegramPayments,
+			provideSubscriptionPlan,
 			provideInitDataValidator,
 			provideDoctorRegistry,
 			provideAdminRegistry,
@@ -64,7 +71,9 @@ func Module() fx.Option {
 			provideCreateAppointment,
 			provideListAppointments,
 			provideListForDoctor,
-			provideOfferAppointment,
+			provideRespondAppointment,
+			provideSetZoomLink,
+			provideSuggestSlots,
 			provideSendAppointmentReminders,
 			providePurgeOutdatedAppointments,
 			provideAppointmentLocation,
@@ -76,14 +85,24 @@ func Module() fx.Option {
 			provideGenerateDraft,
 			provideRespondSubmission,
 			provideAdminStatistics,
+			provideAdminListUsers,
+			provideAdminGetUser,
+			provideAdminUpdateUser,
+			provideAdminSetBlocked,
 			providePredictionExamples,
 			provideTextGenerator,
 			providePredict,
+			provideGetSubscriptionStatus,
+			provideCreateSubscriptionInvoice,
+			provideAnswerPreCheckout,
+			provideConfirmPayment,
+			provideSubscriptionChecker,
 			newAuthHandler,
 			newAppointmentHandler,
 			newPhotoReviewHandler,
 			newAdminHandler,
 			newPredictionHandler,
+			newSubscriptionHandler,
 			newGinEngine,
 			newHTTPServer,
 		),
@@ -157,6 +176,27 @@ func provideStatsRepo(pool *pgxpool.Pool) port.StatsRepository {
 	return postgresadapter.NewStatsRepository(pool)
 }
 
+func provideSubscriptionRepo(pool *pgxpool.Pool) port.SubscriptionRepository {
+	return postgresadapter.NewSubscriptionRepository(pool)
+}
+
+func provideInvoicePayloadSigner(cfg config.Config) port.InvoicePayloadSigner {
+	return subscriptionadapter.NewInvoicePayloadSigner(cfg.SubscriptionInvoiceSecret)
+}
+
+func provideTelegramPayments(cfg config.Config, tgHTTP infrahttp.TelegramHTTPClient) port.TelegramPayments {
+	return telegramadapter.NewPaymentsClient(cfg.TelegramBotToken, tgHTTP.Client)
+}
+
+func provideSubscriptionPlan(cfg config.Config) subscriptionuc.PlanConfig {
+	return subscriptionuc.PlanConfig{
+		StarsPrice:   cfg.SubscriptionStarsPrice,
+		Duration:     cfg.SubscriptionDuration,
+		InvoiceTitle: cfg.SubscriptionInvoiceTitle,
+		InvoiceDesc:  cfg.SubscriptionInvoiceDesc,
+	}
+}
+
 func provideInitDataValidator(cfg config.Config) port.TelegramInitDataValidator {
 	return telegramadapter.NewInitDataValidator(cfg.TelegramBotToken, cfg.TelegramAuthMaxAge)
 }
@@ -212,9 +252,17 @@ func provideTelegramLogin(
 func provideCreateAppointment(
 	repo port.AppointmentRepository,
 	users port.UserRepository,
+	doctors port.DoctorRegistry,
+	tg *telegrambot.Client,
 	clock port.Clock,
 ) *appointmentuc.Create {
-	return &appointmentuc.Create{Appointments: repo, Users: users, Clock: clock}
+	return &appointmentuc.Create{
+		Appointments: repo,
+		Users:        users,
+		Doctors:      doctors,
+		Sender:       tg,
+		Clock:        clock,
+	}
 }
 
 func provideListAppointments(repo port.AppointmentRepository) *appointmentuc.ListMine {
@@ -228,13 +276,13 @@ func provideListForDoctor(
 	return &appointmentuc.ListForDoctor{Appointments: repo, Users: users}
 }
 
-func provideOfferAppointment(
+func provideRespondAppointment(
 	repo port.AppointmentRepository,
 	users port.UserRepository,
 	tg *telegrambot.Client,
 	clock port.Clock,
-) *appointmentuc.Offer {
-	return &appointmentuc.Offer{
+) *appointmentuc.Respond {
+	return &appointmentuc.Respond{
 		Appointments: repo,
 		Users:        users,
 		Sender:       tg,
@@ -242,14 +290,40 @@ func provideOfferAppointment(
 	}
 }
 
+func provideSetZoomLink(
+	repo port.AppointmentRepository,
+	users port.UserRepository,
+	tg *telegrambot.Client,
+) *appointmentuc.SetZoomLink {
+	return &appointmentuc.SetZoomLink{
+		Appointments: repo,
+		Users:        users,
+		Sender:       tg,
+	}
+}
+
+func provideSuggestSlots(
+	repo port.AppointmentRepository,
+	users port.UserRepository,
+	clock port.Clock,
+) *appointmentuc.SuggestSlots {
+	return &appointmentuc.SuggestSlots{
+		Appointments: repo,
+		Users:        users,
+		Clock:        clock,
+	}
+}
+
 func provideSendAppointmentReminders(
 	repo port.AppointmentRepository,
+	users port.UserRepository,
 	tg *telegrambot.Client,
 	clock port.Clock,
 	loc *time.Location,
 ) *appointmentuc.SendReminders {
 	return &appointmentuc.SendReminders{
 		Appointments: repo,
+		Users:        users,
 		Sender:       tg,
 		Clock:        clock,
 		Location:     loc,
@@ -348,6 +422,22 @@ func provideAdminStatistics(
 	return &adminuc.Statistics{Stats: stats, Users: users}
 }
 
+func provideAdminListUsers(users port.UserRepository) *adminuc.ListUsers {
+	return &adminuc.ListUsers{Users: users}
+}
+
+func provideAdminGetUser(users port.UserRepository) *adminuc.GetUser {
+	return &adminuc.GetUser{Users: users}
+}
+
+func provideAdminUpdateUser(users port.UserRepository) *adminuc.UpdateUser {
+	return &adminuc.UpdateUser{Users: users}
+}
+
+func provideAdminSetBlocked(users port.UserRepository) *adminuc.SetBlocked {
+	return &adminuc.SetBlocked{Users: users}
+}
+
 func provideTextGenerator(
 	cfg config.Config,
 	geminiHTTP infrahttp.GeminiHTTPClient,
@@ -363,25 +453,98 @@ func providePredict(
 	return &predictionuc.Predict{Examples: examples, Generator: generator}
 }
 
+func provideGetSubscriptionStatus(
+	repo port.SubscriptionRepository,
+	clock port.Clock,
+	plan subscriptionuc.PlanConfig,
+) *subscriptionuc.GetStatus {
+	return &subscriptionuc.GetStatus{Subscriptions: repo, Clock: clock, Plan: plan}
+}
+
+func provideCreateSubscriptionInvoice(
+	users port.UserRepository,
+	payments port.TelegramPayments,
+	signer port.InvoicePayloadSigner,
+	plan subscriptionuc.PlanConfig,
+) *subscriptionuc.CreateInvoice {
+	return &subscriptionuc.CreateInvoice{
+		Users:    users,
+		Payments: payments,
+		Signer:   signer,
+		Plan:     plan,
+	}
+}
+
+func provideAnswerPreCheckout(
+	users port.UserRepository,
+	payments port.TelegramPayments,
+	signer port.InvoicePayloadSigner,
+) *subscriptionuc.AnswerPreCheckout {
+	return &subscriptionuc.AnswerPreCheckout{
+		Users:    users,
+		Payments: payments,
+		Signer:   signer,
+	}
+}
+
+func provideConfirmPayment(
+	repo port.SubscriptionRepository,
+	signer port.InvoicePayloadSigner,
+	clock port.Clock,
+	plan subscriptionuc.PlanConfig,
+) *subscriptionuc.ConfirmPayment {
+	return &subscriptionuc.ConfirmPayment{
+		Subscriptions: repo,
+		Signer:        signer,
+		Clock:         clock,
+		Plan:          plan,
+	}
+}
+
+func provideSubscriptionChecker(
+	getStatus *subscriptionuc.GetStatus,
+	users port.UserRepository,
+) port.SubscriptionChecker {
+	return &subscriptionuc.Checker{GetStatus: getStatus, Users: users}
+}
+
 func newPredictionHandler(predict *predictionuc.Predict) *predictionhandler.Handler {
 	return &predictionhandler.Handler{PredictUC: predict}
 }
 
-func newAuthHandler(login *authuc.TelegramLogin, log *slog.Logger) *authhandler.Handler {
-	return &authhandler.Handler{Login: login, Log: log}
+func newSubscriptionHandler(
+	getStatus *subscriptionuc.GetStatus,
+	createInvoice *subscriptionuc.CreateInvoice,
+	users port.UserRepository,
+	log *slog.Logger,
+) *subscriptionhandler.Handler {
+	return &subscriptionhandler.Handler{
+		GetStatus:       getStatus,
+		CreateInvoiceUC: createInvoice,
+		Users:           users,
+		Log:             log,
+	}
+}
+
+func newAuthHandler(login *authuc.TelegramLogin, getStatus *subscriptionuc.GetStatus, log *slog.Logger) *authhandler.Handler {
+	return &authhandler.Handler{Login: login, GetStatus: getStatus, Log: log}
 }
 
 func newAppointmentHandler(
 	create *appointmentuc.Create,
 	list *appointmentuc.ListMine,
 	listDoctor *appointmentuc.ListForDoctor,
-	offer *appointmentuc.Offer,
+	respond *appointmentuc.Respond,
+	setZoomLink *appointmentuc.SetZoomLink,
+	suggestSlots *appointmentuc.SuggestSlots,
 ) *appointmenthandler.Handler {
 	return &appointmenthandler.Handler{
 		CreateUC:        create,
 		ListMineUC:      list,
 		ListForDoctorUC: listDoctor,
-		OfferUC:         offer,
+		RespondUC:       respond,
+		SetZoomLinkUC:   setZoomLink,
+		SuggestSlotsUC:  suggestSlots,
 	}
 }
 
@@ -403,8 +566,20 @@ func newPhotoReviewHandler(
 	}
 }
 
-func newAdminHandler(statistics *adminuc.Statistics) *adminhandler.Handler {
-	return &adminhandler.Handler{StatisticsUC: statistics}
+func newAdminHandler(
+	statistics *adminuc.Statistics,
+	listUsers *adminuc.ListUsers,
+	getUser *adminuc.GetUser,
+	updateUser *adminuc.UpdateUser,
+	setBlocked *adminuc.SetBlocked,
+) *adminhandler.Handler {
+	return &adminhandler.Handler{
+		StatisticsUC: statistics,
+		ListUsersUC:  listUsers,
+		GetUserUC:    getUser,
+		UpdateUserUC: updateUser,
+		SetBlockedUC: setBlocked,
+	}
 }
 
 func newGinEngine(
@@ -415,8 +590,12 @@ func newGinEngine(
 	photoReview *photoreviewhandler.Handler,
 	adminH *adminhandler.Handler,
 	predict *predictionhandler.Handler,
+	subscriptionH *subscriptionhandler.Handler,
 	submitPhoto *photoreviewuc.SubmitFromTelegram,
+	answerPreCheckout *subscriptionuc.AnswerPreCheckout,
+	confirmPayment *subscriptionuc.ConfirmPayment,
 	tokens port.TokenIssuer,
+	users port.UserRepository,
 	bot *tgbotapi.BotAPI,
 	tgHTTP infrahttp.TelegramHTTPClient,
 ) *gin.Engine {
@@ -426,17 +605,21 @@ func newGinEngine(
 		log.Info("cors: allowed origins", "origins", cfg.CORSAllowOrigins)
 	}
 	return infrahttp.NewRouter(infrahttp.RouterParams{
-		Config:       cfg,
-		Log:          log,
-		AuthHandler:  auth,
-		AppointmentH: appt,
-		PhotoReviewH: photoReview,
-		AdminH:       adminH,
-		PredictionH:  predict,
-		SubmitPhoto:  submitPhoto,
-		Tokens:       tokens,
-		Bot:          bot,
-		TelegramHTTP: tgHTTP,
+		Config:            cfg,
+		Log:               log,
+		AuthHandler:       auth,
+		AppointmentH:      appt,
+		PhotoReviewH:      photoReview,
+		AdminH:            adminH,
+		PredictionH:       predict,
+		SubscriptionH:     subscriptionH,
+		SubmitPhoto:       submitPhoto,
+		AnswerPreCheckout: answerPreCheckout,
+		ConfirmPayment:    confirmPayment,
+		Tokens:            tokens,
+		Users:             users,
+		Bot:               bot,
+		TelegramHTTP:      tgHTTP,
 	})
 }
 

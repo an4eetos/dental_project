@@ -11,6 +11,7 @@ type User struct {
 	LastName   string
 	AvatarURL  string
 	Role       Role
+	Blocked    bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

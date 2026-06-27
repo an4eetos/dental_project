@@ -22,4 +22,12 @@ func (r *TelegramIDRegistry) IsDoctor(telegramID int64) bool {
 	return ok
 }
 
+func (r *TelegramIDRegistry) TelegramIDs() []int64 {
+	out := make([]int64, 0, len(r.ids))
+	for id := range r.ids {
+		out = append(out, id)
+	}
+	return out
+}
+
 var _ port.DoctorRegistry = (*TelegramIDRegistry)(nil)

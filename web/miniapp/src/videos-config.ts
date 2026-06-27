@@ -1,8 +1,11 @@
+export type VideoAccess = "public" | "subscription";
+
 export type YouTubeVideo = {
   /** YouTube video ID from watch?v=… or youtu.be/… URLs */
   youtubeId: string;
   title: string;
   description?: string;
+  access: VideoAccess;
 };
 
 /**
@@ -14,21 +17,25 @@ export const YOUTUBE_VIDEOS: readonly YouTubeVideo[] = [
     youtubeId: "zQZ3SGSwGBI",
     title: "Балалардың ауыз қуысы гигиенасы",
     description: "Рекомендации стоматолога для будущих мам",
+    access: "public",
   },
   {
     youtubeId: "IFT7drSL35s",
     title: "Гигиена полости рта детей",
     description: "Рекомендации стоматолога для будущих мам",
+    access: "public",
   },
   {
     youtubeId: "FMU4zgGRbiE",
     title: "Жүктілік кезіндегі ауыз қуысының гигиенасы",
     description: "Рекомендации стоматолога для будущих мам",
+    access: "subscription",
   },
   {
     youtubeId: "yKlH5tjZTxI",
     title: "Гигиена полости рта беременных пациентов",
     description: "Рекомендации стоматолога для будущих мам",
+    access: "subscription",
   },
 ];
 

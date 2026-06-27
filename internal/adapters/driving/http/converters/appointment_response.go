@@ -12,7 +12,9 @@ type AppointmentResponse struct {
 	PreferredDate string    `json:"preferred_date"`
 	PreferredTime string    `json:"preferred_time"`
 	Status        string    `json:"status"`
+	VisitType     string    `json:"visit_type,omitempty"`
 	ZoomLink      string    `json:"zoom_link,omitempty"`
+	DoctorNotes   string    `json:"doctor_notes,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -24,8 +26,14 @@ func ToAppointmentResponse(a booking.Appointment) AppointmentResponse {
 		Status:        a.Status.String(),
 		CreatedAt:     a.CreatedAt.UTC(),
 	}
-	if a.Status == booking.StatusConfirmed && a.ZoomLink != "" {
+	if a.VisitType.Valid() {
+		resp.VisitType = a.VisitType.String()
+	}
+	if a.Status == booking.StatusConfirmed && a.VisitType == booking.VisitTypeVideo && a.ZoomLink != "" {
 		resp.ZoomLink = a.ZoomLink
+	}
+	if a.Status == booking.StatusRejected && a.DoctorNotes != "" {
+		resp.DoctorNotes = a.DoctorNotes
 	}
 	return resp
 }

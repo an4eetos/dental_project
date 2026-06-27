@@ -3,22 +3,34 @@ import {
   apiBaseUrl,
   authTelegram,
   createAppointment,
+  createSubscriptionInvoice,
   fetchSubmissionPhotoUrl,
   generateSubmissionDraft,
   getAdminStatistics,
+  getAdminUser,
+  listAdminUsers,
+  setAdminUserBlocked,
+  updateAdminUser,
   getSubmission,
+  getSubscriptionStatus,
   listAllAppointments,
   listAnsweredSubmissions,
   listMyAppointments,
   listPendingSubmissions,
-  offerAppointment,
+  respondAppointment,
+  setAppointmentZoomLink,
+  suggestAppointmentSlots,
   predict,
   respondToSubmission,
   type AdminStatistics,
+  type AdminUser,
+  type AdminUserOverview,
+  type AppointmentDecision,
   type AuthResponse,
   type DoctorAppointment,
   type PhotoSubmission,
   type PredictRequest,
+  type SubscriptionStatus,
 } from "./api";
 import {
   PREDICTION_INPUT_FIELDS,
@@ -35,6 +47,42 @@ import {
 } from "./videos-config";
 
 const tg = window.Telegram?.WebApp;
+
+let subscriptionCache: SubscriptionStatus | null = null;
+
+async function refreshSubscription(token: string): Promise<SubscriptionStatus> {
+  const status = await getSubscriptionStatus(token);
+  subscriptionCache = status;
+  return status;
+}
+
+function openSubscriptionInvoice(
+  token: string,
+  onPaid: () => void,
+): void {
+  void (async () => {
+    try {
+      const { invoice_link: invoiceLink } = await createSubscriptionInvoice(token);
+      if (tg?.openInvoice) {
+        tg.openInvoice(invoiceLink, (status) => {
+          if (status === "paid") {
+            void refreshSubscription(token).then(onPaid);
+          }
+        });
+        return;
+      }
+      window.open(invoiceLink, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Не удалось открыть оплату";
+      if (tg?.showAlert) {
+        tg.showAlert(message);
+      } else {
+        window.alert(message);
+      }
+    }
+  })();
+}
 
 const appRoot = document.getElementById("app");
 if (!appRoot) {
@@ -100,10 +148,23 @@ function statusLabel(status: string): string {
       return "Ожидает подтверждения";
     case "confirmed":
       return "Подтверждена";
+    case "rejected":
+      return "Перенос / отклонена";
     case "cancelled":
       return "Отменена";
     default:
       return status;
+  }
+}
+
+function visitTypeLabel(visitType?: string): string {
+  switch (visitType) {
+    case "in_person":
+      return "Очный приём";
+    case "video":
+      return "Видеоконсультация";
+    default:
+      return "";
   }
 }
 
@@ -162,6 +223,13 @@ function renderAppointmentsList(
       el("p", "item-title", `${a.preferred_date} в ${a.preferred_time}`),
       el("p", "muted", statusLabel(a.status)),
     );
+    const visitLabel = visitTypeLabel(a.visit_type);
+    if (visitLabel) {
+      card.append(el("p", "muted", visitLabel));
+    }
+    if (a.status === "confirmed" && a.visit_type === "video" && !a.zoom_link) {
+      card.append(el("p", "muted", "Ссылка на Zoom будет добавлена позже."));
+    }
     if (a.status === "confirmed" && a.zoom_link) {
       const link = document.createElement("a");
       link.href = a.zoom_link;
@@ -170,6 +238,9 @@ function renderAppointmentsList(
       link.className = "link";
       link.textContent = "Открыть Zoom";
       card.append(link);
+    }
+    if (a.status === "rejected" && a.doctor_notes) {
+      card.append(el("p", "muted", a.doctor_notes));
     }
     list.append(card);
   }
@@ -308,14 +379,54 @@ function buildPredictionContent(token: string): HTMLElement {
   return stack;
 }
 
-function buildVideoCard(video: YouTubeVideo): HTMLElement {
-  const card = el("article", "card video-card");
+function buildVideoCard(
+  video: YouTubeVideo,
+  subscription: SubscriptionStatus,
+  token: string,
+  onSubscriptionChange: () => void,
+): HTMLElement {
+  const locked = video.access === "subscription" && !subscription.active;
+  const card = el("article", locked ? "card video-card video-card--locked" : "card video-card");
   card.append(el("h3", "video-title", video.title));
   if (video.description) {
     card.append(el("p", "muted video-desc", video.description));
   }
+  if (locked) {
+    card.append(el("span", "subscription-badge", "Только для подписчиков"));
+  }
 
   const playerHost = el("div", "video-player");
+
+  if (locked) {
+    const lockedView = document.createElement("div");
+    lockedView.className = "video-placeholder";
+
+    const thumb = document.createElement("img");
+    thumb.src = youtubeThumbnailUrl(video.youtubeId);
+    thumb.alt = "";
+    thumb.className = "video-thumb";
+    thumb.loading = "lazy";
+
+    const overlay = el("div", "video-lock-overlay");
+    overlay.append(
+      el("span", undefined, "🔒"),
+      el("p", undefined, "Эксклюзивный материал для подписчиков"),
+    );
+
+    lockedView.append(thumb, overlay);
+    playerHost.append(lockedView);
+
+    const subscribeBtn = document.createElement("button");
+    subscribeBtn.type = "button";
+    subscribeBtn.className = "button primary subscription-cta";
+    subscribeBtn.textContent = `Оформить подписку — ${subscription.stars_price} ⭐`;
+    subscribeBtn.addEventListener("click", () => {
+      openSubscriptionInvoice(token, onSubscriptionChange);
+    });
+    card.append(playerHost, subscribeBtn);
+    return card;
+  }
+
   const playBtn = document.createElement("button");
   playBtn.type = "button";
   playBtn.className = "video-placeholder";
@@ -363,8 +474,28 @@ function buildVideoCard(video: YouTubeVideo): HTMLElement {
   return card;
 }
 
-function buildVideosContent(): HTMLElement {
+function buildVideosContent(
+  token: string,
+  subscription: SubscriptionStatus,
+  onSubscriptionChange: () => void,
+): HTMLElement {
   const stack = el("div", "stack");
+
+  if (!subscription.active) {
+    const banner = el(
+      "div",
+      "subscription-banner",
+      `Подписка открывает эксклюзивные видео на ${subscription.duration_days} дн. за ${subscription.stars_price} Telegram Stars.`,
+    );
+    stack.append(banner);
+  } else if (subscription.expires_at) {
+    const expires = new Date(subscription.expires_at);
+    const label = Number.isNaN(expires.getTime())
+      ? "Подписка активна"
+      : `Подписка активна до ${expires.toLocaleDateString("ru-RU")}`;
+    const banner = el("div", "subscription-banner subscription-banner--active", label);
+    stack.append(banner);
+  }
 
   if (YOUTUBE_VIDEOS.length === 0) {
     stack.append(
@@ -375,24 +506,53 @@ function buildVideosContent(): HTMLElement {
 
   const list = el("section", "list video-list");
   for (const video of YOUTUBE_VIDEOS) {
-    list.append(buildVideoCard(video));
+    list.append(buildVideoCard(video, subscription, token, onSubscriptionChange));
   }
   stack.append(list);
   return stack;
 }
 
-function buildPatientTabContent(token: string, tab: PatientTab): HTMLElement {
+function buildPatientTabContent(
+  token: string,
+  tab: PatientTab,
+  subscription: SubscriptionStatus,
+  onSubscriptionChange: () => void,
+): HTMLElement {
   switch (tab) {
     case "booking":
       return buildBookingContent(token);
     case "prediction":
       return buildPredictionContent(token);
     case "videos":
-      return buildVideosContent();
+      return buildVideosContent(token, subscription, onSubscriptionChange);
   }
 }
 
 function renderPatientShell(token: string, activeTab: PatientTab): void {
+  void renderPatientShellAsync(token, activeTab);
+}
+
+async function renderPatientShellAsync(token: string, activeTab: PatientTab): Promise<void> {
+  let subscription = subscriptionCache;
+  if (!subscription || activeTab === "videos") {
+    try {
+      subscription = await refreshSubscription(token);
+    } catch (err) {
+      subscription = subscription ?? {
+        active: false,
+        stars_price: 50,
+        duration_days: 30,
+      };
+      if (activeTab === "videos") {
+        console.warn("[miniapp] subscription status unavailable", err);
+      }
+    }
+  }
+
+  const rerender = () => {
+    void renderPatientShellAsync(token, activeTab);
+  };
+
   const tabs = el("nav", "tabs");
 
   for (const tab of PATIENT_TABS) {
@@ -405,7 +565,9 @@ function renderPatientShell(token: string, activeTab: PatientTab): void {
   }
 
   const contentHost = el("div", "tab-content");
-  contentHost.append(buildPatientTabContent(token, activeTab));
+  contentHost.append(
+    buildPatientTabContent(token, activeTab, subscription, rerender),
+  );
 
   const shell = el("div", "stack");
   shell.append(tabs, contentHost);
@@ -714,7 +876,51 @@ function buildSubmissionDetailContent(
   return shell;
 }
 
-function renderAdminDashboard(token: string): void {
+function roleLabel(role: string): string {
+  switch (role) {
+    case "doctor":
+      return "Врач";
+    case "admin":
+      return "Администратор";
+    default:
+      return "Пациент";
+  }
+}
+
+const ADMIN_TABS = [
+  { id: "stats" as const, label: "Статистика", title: "Статистика клиники", subtitle: "Панель администратора" },
+  { id: "users" as const, label: "Пользователи", title: "Пользователи", subtitle: "Просмотр и редактирование" },
+];
+
+function renderAdminDashboard(token: string, activeTab: "stats" | "users" = "stats"): void {
+  const tabs = el("nav", "tabs");
+  const contentHost = el("div", "tab-content");
+
+  for (const tab of ADMIN_TABS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `tab${tab.id === activeTab ? " active" : ""}`;
+    btn.textContent = tab.label;
+    btn.addEventListener("click", () => renderAdminDashboard(token, tab.id));
+    tabs.append(btn);
+  }
+
+  switch (activeTab) {
+    case "stats":
+      contentHost.append(buildAdminStatsContent(token));
+      break;
+    case "users":
+      contentHost.append(buildAdminUsersContent(token));
+      break;
+  }
+
+  const shell = el("div", "stack");
+  shell.append(tabs, contentHost);
+  const meta = ADMIN_TABS.find((t) => t.id === activeTab) ?? ADMIN_TABS[0];
+  renderShell(shell, meta.title, meta.subtitle);
+}
+
+function buildAdminStatsContent(token: string): HTMLElement {
   const statsHost = el("div", "stats-grid");
   const refresh = document.createElement("button");
   refresh.type = "button";
@@ -740,8 +946,232 @@ function renderAdminDashboard(token: string): void {
   refresh.addEventListener("click", () => void load());
   const shell = el("div", "stack");
   shell.append(refresh, statsHost);
-  renderShell(shell, "Статистика клиники", "Панель администратора");
   void load();
+  return shell;
+}
+
+function buildAdminUsersContent(token: string): HTMLElement {
+  const listHost = el("div", "list-host");
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "input";
+  searchInput.placeholder = "Поиск по имени, username или Telegram ID";
+
+  const roleSelect = document.createElement("select");
+  roleSelect.className = "input";
+  roleSelect.append(
+    new Option("Все роли", ""),
+    new Option("Пациенты", "patient"),
+    new Option("Врачи", "doctor"),
+    new Option("Администраторы", "admin"),
+  );
+
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.className = "button primary";
+  refresh.textContent = "Обновить";
+
+  const load = async () => {
+    listHost.replaceChildren(el("p", "status", "Загрузка…"));
+    try {
+      const role = roleSelect.value as "" | "patient" | "doctor" | "admin";
+      const data = await listAdminUsers(token, {
+        search: searchInput.value.trim() || undefined,
+        role: role || undefined,
+      });
+      listHost.replaceChildren(renderAdminUserList(token, data.users, load));
+    } catch (err) {
+      listHost.replaceChildren(
+        el(
+          "p",
+          "muted",
+          err instanceof ApiError ? err.message : "Не удалось загрузить пользователей",
+        ),
+      );
+    }
+  };
+
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void load();
+  });
+  roleSelect.addEventListener("change", () => void load());
+  refresh.addEventListener("click", () => void load());
+
+  const shell = el("div", "stack");
+  shell.append(searchInput, roleSelect, refresh, listHost);
+  void load();
+  return shell;
+}
+
+function renderAdminUserList(
+  token: string,
+  users: AdminUser[],
+  onBack: () => void,
+): HTMLElement {
+  const list = el("section", "list");
+  if (users.length === 0) {
+    list.append(el("p", "muted", "Пользователи не найдены."));
+    return list;
+  }
+
+  for (const user of users) {
+    const card = el("article", "card item submission-item");
+    const title = `${user.first_name}${user.last_name ? ` ${user.last_name}` : ""}`;
+    card.append(
+      el("p", "item-title", title),
+      el("p", "muted", `${roleLabel(user.role)}${user.blocked ? " · заблокирован" : ""}`),
+    );
+    if (user.username) {
+      card.append(el("p", "muted", `@${user.username}`));
+    }
+    card.addEventListener("click", () => {
+      renderAdminUserDetail(token, user.id, onBack);
+    });
+    list.append(card);
+  }
+  return list;
+}
+
+function renderAdminUserDetail(token: string, userId: number, onBack: () => void): void {
+  const shell = el("div", "stack");
+  renderShell(shell, "Пользователь", "Карточка пациента / врача");
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "button";
+  back.textContent = "← Назад к списку";
+  back.addEventListener("click", onBack);
+  shell.append(back);
+
+  const host = el("div", "list-host");
+  host.append(el("p", "status", "Загрузка…"));
+  shell.append(host);
+
+  void (async () => {
+    try {
+      const user = await getAdminUser(token, userId);
+      host.replaceChildren(renderAdminUserForm(token, user, onBack));
+    } catch (err) {
+      host.replaceChildren(
+        el(
+          "p",
+          "muted",
+          err instanceof ApiError ? err.message : "Не удалось загрузить пользователя",
+        ),
+      );
+    }
+  })();
+}
+
+function renderAdminUserForm(
+  token: string,
+  user: AdminUserOverview,
+  onBack: () => void,
+): HTMLElement {
+  const wrap = el("div", "stack");
+  const info = el("article", "card");
+  info.append(
+    el("p", "muted", `Telegram ID: ${user.telegram_id}`),
+    el("p", "muted", `Записей: ${user.appointment_count}`),
+    el("p", "muted", `Фото-заявок: ${user.photo_submission_count}`),
+    el("p", "muted", `Регистрация: ${formatDateTime(user.created_at)}`),
+  );
+  wrap.append(info);
+
+  const isAdmin = user.role === "admin";
+  const form = el("form", "card form");
+
+  const firstNameLabel = el("label", undefined, "Имя");
+  const firstNameInput = document.createElement("input");
+  firstNameInput.className = "input";
+  firstNameInput.required = true;
+  firstNameInput.value = user.first_name;
+  firstNameInput.disabled = isAdmin;
+
+  const lastNameLabel = el("label", undefined, "Фамилия");
+  const lastNameInput = document.createElement("input");
+  lastNameInput.className = "input";
+  lastNameInput.value = user.last_name ?? "";
+  lastNameInput.disabled = isAdmin;
+
+  const usernameLabel = el("label", undefined, "Username");
+  const usernameInput = document.createElement("input");
+  usernameInput.className = "input";
+  usernameInput.value = user.username ?? "";
+  usernameInput.disabled = isAdmin;
+
+  const roleLabelEl = el("label", undefined, "Роль");
+  const roleInput = document.createElement("select");
+  roleInput.className = "input";
+  roleInput.disabled = isAdmin;
+  roleInput.append(new Option("Пациент", "patient"), new Option("Врач", "doctor"));
+  roleInput.value = user.role === "doctor" ? "doctor" : "patient";
+
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "button primary";
+  save.textContent = "Сохранить";
+  save.disabled = isAdmin;
+
+  const blockBtn = document.createElement("button");
+  blockBtn.type = "button";
+  blockBtn.className = user.blocked ? "button primary" : "button";
+  blockBtn.textContent = user.blocked ? "Разблокировать" : "Заблокировать";
+  blockBtn.disabled = isAdmin;
+
+  const status = el("p", "status hidden");
+  form.append(
+    firstNameLabel,
+    firstNameInput,
+    lastNameLabel,
+    lastNameInput,
+    usernameLabel,
+    usernameInput,
+    roleLabelEl,
+    roleInput,
+    save,
+    blockBtn,
+    status,
+  );
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    save.setAttribute("disabled", "true");
+    status.className = "status";
+    status.textContent = "Сохранение…";
+    try {
+      await updateAdminUser(token, user.id, {
+        first_name: firstNameInput.value.trim(),
+        last_name: lastNameInput.value.trim(),
+        username: usernameInput.value.trim(),
+        role: roleInput.value as "patient" | "doctor",
+      });
+      status.textContent = "Изменения сохранены.";
+      setTimeout(onBack, 700);
+    } catch (err) {
+      status.textContent =
+        err instanceof ApiError ? err.message : "Не удалось сохранить изменения";
+      save.removeAttribute("disabled");
+    }
+  });
+
+  blockBtn.addEventListener("click", async () => {
+    blockBtn.setAttribute("disabled", "true");
+    status.className = "status";
+    status.textContent = user.blocked ? "Разблокировка…" : "Блокировка…";
+    try {
+      await setAdminUserBlocked(token, user.id, !user.blocked);
+      status.textContent = user.blocked ? "Пользователь разблокирован." : "Пользователь заблокирован.";
+      setTimeout(onBack, 700);
+    } catch (err) {
+      status.textContent =
+        err instanceof ApiError ? err.message : "Не удалось изменить статус блокировки";
+      blockBtn.removeAttribute("disabled");
+    }
+  });
+
+  wrap.append(form);
+  return wrap;
 }
 
 function renderAdminStats(stats: AdminStatistics): HTMLElement {
@@ -785,7 +1215,14 @@ function renderDoctorAppointmentsList(
       el("p", undefined, patientName(a.patient)),
       el("p", "muted", statusLabel(a.status)),
     );
-    if (a.status === "cancelled") {
+    const visitLabel = visitTypeLabel(a.visit_type);
+    if (visitLabel) {
+      card.append(el("p", "muted", visitLabel));
+    }
+    if (a.needs_zoom_link) {
+      card.append(el("p", "muted", "⚠️ Нужна ссылка на Zoom"));
+    }
+    if (a.status === "cancelled" || a.status === "rejected") {
       list.append(card);
       continue;
     }
@@ -803,7 +1240,7 @@ function renderDoctorAppointmentOffer(
   onBack: () => void,
 ): void {
   const shell = el("div", "stack");
-  renderShell(shell, "Подтверждение записи", patientName(appointment.patient));
+  renderShell(shell, "Ответ на заявку", patientName(appointment.patient));
 
   const back = document.createElement("button");
   back.type = "button";
@@ -812,11 +1249,33 @@ function renderDoctorAppointmentOffer(
   back.addEventListener("click", onBack);
   shell.append(back);
 
+  if (appointment.needs_zoom_link) {
+    shell.append(buildZoomLinkForm(token, appointment, onBack));
+  }
+
+  if (appointment.status !== "pending") {
+    if (!appointment.needs_zoom_link) {
+      shell.append(el("p", "muted", "Заявка уже обработана."));
+    }
+    return;
+  }
+
   const form = el("form", "card form");
+
+  const decisionLabel = el("label", undefined, "Решение врача");
+  const decisionSelect = document.createElement("select");
+  decisionSelect.className = "input";
+  decisionSelect.required = true;
+  decisionSelect.append(
+    new Option("Выберите вариант", ""),
+    new Option("Очный приём", "in_person"),
+    new Option("Видеоконсультация (Zoom)", "video"),
+    new Option("Перенести / отклонить", "reject"),
+  );
+
   const dateLabel = el("label", undefined, "Дата консультации");
   const dateInput = document.createElement("input");
   dateInput.type = "date";
-  dateInput.required = true;
   dateInput.min = minDate();
   dateInput.max = maxDate();
   dateInput.className = "input";
@@ -825,14 +1284,135 @@ function renderDoctorAppointmentOffer(
   const timeLabel = el("label", undefined, "Время консультации");
   const timeInput = document.createElement("input");
   timeInput.type = "time";
-  timeInput.required = true;
   timeInput.min = "09:00";
   timeInput.max = "20:00";
   timeInput.step = "60";
   timeInput.className = "input";
   timeInput.value = appointment.preferred_time;
 
-  const zoomLabel = el("label", undefined, "Ссылка на Zoom");
+  const zoomLabel = el("label", undefined, "Ссылка на Zoom (можно добавить позже)");
+  const zoomInput = document.createElement("input");
+  zoomInput.type = "url";
+  zoomInput.className = "input";
+  zoomInput.placeholder = "https://zoom.us/j/...";
+  zoomInput.value = appointment.zoom_link ?? "";
+
+  const notesLabel = el("label", undefined, "Комментарий для пациента");
+  const notesInput = document.createElement("textarea");
+  notesInput.className = "input textarea";
+  notesInput.rows = 5;
+  notesInput.placeholder = "Укажите доступные даты и время для переноса";
+
+  const generateSlots = document.createElement("button");
+  generateSlots.type = "button";
+  generateSlots.className = "button";
+  generateSlots.textContent = "Сгенерировать доступные слоты";
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "button primary";
+  submit.textContent = "Отправить решение пациенту";
+
+  const status = el("p", "status hidden");
+
+  const syncFields = () => {
+    const decision = decisionSelect.value as AppointmentDecision | "";
+    const isReject = decision === "reject";
+    const isVideo = decision === "video";
+    const needsSlot = decision === "in_person" || decision === "video";
+
+    dateLabel.classList.toggle("hidden", !needsSlot);
+    dateInput.classList.toggle("hidden", !needsSlot);
+    dateInput.required = needsSlot;
+
+    timeLabel.classList.toggle("hidden", !needsSlot);
+    timeInput.classList.toggle("hidden", !needsSlot);
+    timeInput.required = needsSlot;
+
+    zoomLabel.classList.toggle("hidden", !isVideo);
+    zoomInput.classList.toggle("hidden", !isVideo);
+
+    notesLabel.textContent = isReject
+      ? "Доступные варианты и пояснение для пациента"
+      : "Комментарий для пациента (необязательно)";
+    notesInput.required = isReject;
+    generateSlots.classList.toggle("hidden", !isReject);
+  };
+
+  decisionSelect.addEventListener("change", syncFields);
+  generateSlots.addEventListener("click", async () => {
+    generateSlots.setAttribute("disabled", "true");
+    status.className = "status";
+    status.textContent = "Генерация…";
+    try {
+      const data = await suggestAppointmentSlots(token, appointment.id);
+      notesInput.value = data.suggested_text;
+      status.textContent = "Варианты добавлены — при необходимости отредактируйте.";
+    } catch (err) {
+      status.textContent =
+        err instanceof ApiError ? err.message : "Не удалось сгенерировать слоты";
+    } finally {
+      generateSlots.removeAttribute("disabled");
+    }
+  });
+
+  form.append(
+    decisionLabel,
+    decisionSelect,
+    dateLabel,
+    dateInput,
+    timeLabel,
+    timeInput,
+    zoomLabel,
+    zoomInput,
+    notesLabel,
+    notesInput,
+    generateSlots,
+    submit,
+    status,
+  );
+  syncFields();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const decision = decisionSelect.value as AppointmentDecision;
+    if (!decision) {
+      status.className = "status";
+      status.textContent = "Выберите решение.";
+      return;
+    }
+
+    submit.setAttribute("disabled", "true");
+    status.className = "status";
+    status.textContent = "Отправка…";
+    try {
+      await respondAppointment(token, appointment.id, {
+        decision,
+        preferred_date: dateInput.value,
+        preferred_time: timeInput.value,
+        zoom_link: zoomInput.value.trim(),
+        doctor_notes: notesInput.value.trim(),
+      });
+      status.textContent = "Пациент получил уведомление.";
+      setTimeout(onBack, 900);
+    } catch (err) {
+      status.textContent =
+        err instanceof ApiError ? err.message : "Не удалось отправить решение";
+      submit.removeAttribute("disabled");
+    }
+  });
+
+  shell.append(form);
+}
+
+function buildZoomLinkForm(
+  token: string,
+  appointment: DoctorAppointment,
+  onBack: () => void,
+): HTMLElement {
+  const form = el("form", "card form");
+  form.append(el("h2", "section-title", "Добавить ссылку на Zoom"));
+
   const zoomInput = document.createElement("input");
   zoomInput.type = "url";
   zoomInput.required = true;
@@ -843,37 +1423,28 @@ function renderDoctorAppointmentOffer(
   const submit = document.createElement("button");
   submit.type = "submit";
   submit.className = "button primary";
-  submit.textContent =
-    appointment.status === "confirmed"
-      ? "Обновить и уведомить пациента"
-      : "Подтвердить и отправить пациенту";
+  submit.textContent = "Сохранить и уведомить пациента";
 
   const status = el("p", "status hidden");
-  form.append(dateLabel, dateInput, timeLabel, timeInput, zoomLabel, zoomInput, submit, status);
+  form.append(zoomInput, submit, status);
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     submit.setAttribute("disabled", "true");
     status.className = "status";
-    status.textContent = "Отправка…";
+    status.textContent = "Сохранение…";
     try {
-      await offerAppointment(
-        token,
-        appointment.id,
-        dateInput.value,
-        timeInput.value,
-        zoomInput.value.trim(),
-      );
-      status.textContent = "Пациент получил уведомление со ссылкой на Zoom.";
+      await setAppointmentZoomLink(token, appointment.id, zoomInput.value.trim());
+      status.textContent = "Пациент получил ссылку на Zoom.";
       setTimeout(onBack, 900);
     } catch (err) {
       status.textContent =
-        err instanceof ApiError ? err.message : "Не удалось отправить предложение";
+        err instanceof ApiError ? err.message : "Не удалось сохранить ссылку";
       submit.removeAttribute("disabled");
     }
   });
 
-  shell.append(form);
+  return form;
 }
 
 async function ensureAuth(): Promise<AuthResponse> {
@@ -913,12 +1484,15 @@ async function bootstrap(): Promise<void> {
 
   try {
     const auth = await ensureAuth();
+    if (auth.subscription) {
+      subscriptionCache = auth.subscription;
+    }
     if (auth.user.role === "admin") {
       renderAdminDashboard(auth.access_token);
       return;
     }
     if (auth.user.role === "doctor") {
-      renderDoctorDashboard(auth.access_token, "pending");
+      renderDoctorDashboard(auth.access_token, "appointments");
       return;
     }
     renderPatientShell(auth.access_token, "booking");

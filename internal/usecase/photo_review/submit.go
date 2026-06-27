@@ -3,6 +3,7 @@ package photoreview
 import (
 	"context"
 
+	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	photoreview "github.com/anuarkuanysh/dental_project/internal/domain/photo_review"
 	"github.com/anuarkuanysh/dental_project/internal/port"
@@ -45,6 +46,9 @@ func (uc *SubmitFromTelegram) Execute(ctx context.Context, in SubmitInput) error
 	})
 	if err != nil {
 		return err
+	}
+	if user.Blocked {
+		return domainerrors.ErrUserBlocked
 	}
 
 	raw, mimeHint, err := uc.Downloader.DownloadFile(ctx, in.FileID)

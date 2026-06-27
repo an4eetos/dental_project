@@ -16,20 +16,24 @@ type UserResponse struct {
 	FirstName  string `json:"first_name"`
 	LastName   string `json:"last_name,omitempty"`
 	AvatarURL  string `json:"avatar_url,omitempty"`
+	Blocked    bool   `json:"blocked,omitempty"`
 }
 
 type AuthTelegramResponse struct {
-	AccessToken string       `json:"access_token"`
-	ExpiresAt   time.Time    `json:"expires_at"`
-	User        UserResponse `json:"user"`
+	AccessToken  string                      `json:"access_token"`
+	ExpiresAt    time.Time                   `json:"expires_at"`
+	User         UserResponse                `json:"user"`
+	Subscription *SubscriptionStatusResponse `json:"subscription,omitempty"`
 }
 
-func ToAuthTelegramResponse(result authuc.LoginResult) AuthTelegramResponse {
-	return AuthTelegramResponse{
+func ToAuthTelegramResponse(result authuc.LoginResult, subscription *SubscriptionStatusResponse) AuthTelegramResponse {
+	resp := AuthTelegramResponse{
 		AccessToken: result.Token.Value,
 		ExpiresAt:   result.Token.ExpiresAt,
 		User:        ToUserResponse(result.User),
+		Subscription: subscription,
 	}
+	return resp
 }
 
 func ToUserResponse(u identity.User) UserResponse {
@@ -41,6 +45,7 @@ func ToUserResponse(u identity.User) UserResponse {
 		FirstName:  u.FirstName,
 		LastName:   u.LastName,
 		AvatarURL:  u.AvatarURL,
+		Blocked:    u.Blocked,
 	}
 }
 

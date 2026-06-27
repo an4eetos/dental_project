@@ -20,7 +20,10 @@ type DoctorAppointmentResponse struct {
 	PreferredDate string               `json:"preferred_date"`
 	PreferredTime string               `json:"preferred_time"`
 	Status        string               `json:"status"`
+	VisitType     string               `json:"visit_type,omitempty"`
 	ZoomLink      string               `json:"zoom_link,omitempty"`
+	DoctorNotes   string               `json:"doctor_notes,omitempty"`
+	NeedsZoomLink bool                 `json:"needs_zoom_link,omitempty"`
 	CreatedAt     time.Time            `json:"created_at"`
 	Patient       PatientBriefResponse `json:"patient"`
 }
@@ -40,8 +43,19 @@ func ToDoctorAppointmentResponse(item booking.AppointmentWithPatient) DoctorAppo
 			LastName:   item.Patient.LastName,
 		},
 	}
+	if item.Appointment.VisitType.Valid() {
+		resp.VisitType = item.Appointment.VisitType.String()
+	}
 	if item.Appointment.ZoomLink != "" {
 		resp.ZoomLink = item.Appointment.ZoomLink
+	}
+	if item.Appointment.DoctorNotes != "" {
+		resp.DoctorNotes = item.Appointment.DoctorNotes
+	}
+	if item.Appointment.Status == booking.StatusConfirmed &&
+		item.Appointment.VisitType == booking.VisitTypeVideo &&
+		item.Appointment.ZoomLink == "" {
+		resp.NeedsZoomLink = true
 	}
 	return resp
 }

@@ -15,11 +15,13 @@ import (
 	jwtmiddleware "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/middleware"
 	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
 	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
+	subscriptionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/subscription"
 	"github.com/anuarkuanysh/dental_project/internal/handler"
 	"github.com/anuarkuanysh/dental_project/internal/middleware"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 	"github.com/anuarkuanysh/dental_project/internal/telegrambot"
 	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
+	subscriptionuc "github.com/anuarkuanysh/dental_project/internal/usecase/subscription"
 )
 
 // RouterParams wires HTTP routes.
@@ -31,8 +33,12 @@ type RouterParams struct {
 	PhotoReviewH   *photoreviewhandler.Handler
 	AdminH         *adminhandler.Handler
 	PredictionH    *predictionhandler.Handler
+	SubscriptionH  *subscriptionhandler.Handler
 	SubmitPhoto    *photoreviewuc.SubmitFromTelegram
+	AnswerPreCheckout *subscriptionuc.AnswerPreCheckout
+	ConfirmPayment *subscriptionuc.ConfirmPayment
 	Tokens         port.TokenIssuer
+	Users          port.UserRepository
 	Bot            *tgbotapi.BotAPI
 	TelegramHTTP   TelegramHTTPClient
 }
@@ -56,15 +62,24 @@ func NewRouter(p RouterParams) *gin.Engine {
 
 	protected := r.Group("/")
 	protected.Use(jwtmiddleware.JWTAuth(p.Tokens))
+	protected.Use(jwtmiddleware.RequireNotBlocked(p.Users))
 	protected.POST("/appointments", p.AppointmentH.Create)
 	protected.GET("/appointments/me", p.AppointmentH.ListMine)
 	protected.GET("/appointments",
 		jwtmiddleware.RequireDoctor(),
 		p.AppointmentH.ListForDoctor,
 	)
-	protected.PATCH("/appointments/:id/offer",
+	protected.PATCH("/appointments/:id/respond",
 		jwtmiddleware.RequireDoctor(),
-		p.AppointmentH.Offer,
+		p.AppointmentH.Respond,
+	)
+	protected.PATCH("/appointments/:id/zoom-link",
+		jwtmiddleware.RequireDoctor(),
+		p.AppointmentH.SetZoomLink,
+	)
+	protected.POST("/appointments/:id/suggest-slots",
+		jwtmiddleware.RequireDoctor(),
+		p.AppointmentH.SuggestSlots,
 	)
 
 	if p.PhotoReviewH != nil {
@@ -79,14 +94,22 @@ func NewRouter(p RouterParams) *gin.Engine {
 	}
 
 	if p.AdminH != nil {
-		protected.GET("/admin/statistics",
-			jwtmiddleware.RequireAdmin(),
-			p.AdminH.GetStatistics,
-		)
+		adminGroup := protected.Group("/admin")
+		adminGroup.Use(jwtmiddleware.RequireAdmin())
+		adminGroup.GET("/statistics", p.AdminH.GetStatistics)
+		adminGroup.GET("/users", p.AdminH.ListUsers)
+		adminGroup.GET("/users/:id", p.AdminH.GetUser)
+		adminGroup.PATCH("/users/:id", p.AdminH.UpdateUser)
+		adminGroup.PATCH("/users/:id/block", p.AdminH.SetBlocked)
 	}
 
 	if p.PredictionH != nil {
 		protected.POST("/predict", p.PredictionH.Predict)
+	}
+
+	if p.SubscriptionH != nil {
+		protected.GET("/subscription/me", p.SubscriptionH.GetMe)
+		protected.POST("/subscription/invoice", p.SubscriptionH.CreateInvoice)
 	}
 
 	tgClient := telegrambot.New(p.Bot, p.TelegramHTTP.Client)
@@ -94,10 +117,12 @@ func NewRouter(p RouterParams) *gin.Engine {
 	r.POST("/webhook",
 		middleware.WebhookSecret(p.Config.TelegramWebhookSecret),
 		handler.Webhook(handler.WebhookDeps{
-			SubmitPhoto: p.SubmitPhoto,
-			Sender:      tgClient,
-			Log:         p.Log,
-			ReqTimeout:  p.Config.RequestTimeout,
+			SubmitPhoto:       p.SubmitPhoto,
+			AnswerPreCheckout: p.AnswerPreCheckout,
+			ConfirmPayment:    p.ConfirmPayment,
+			Sender:            tgClient,
+			Log:               p.Log,
+			ReqTimeout:        p.Config.RequestTimeout,
 		}),
 	)
 

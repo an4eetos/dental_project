@@ -93,6 +93,10 @@ body[data-theme="dark"] {
   display: none;
 }
 
+.hidden {
+  display: none;
+}
+
 .error {
   border-color: var(--error);
   color: var(--error);
@@ -270,9 +274,56 @@ body[data-theme="dark"] {
   border: none;
 }
 
-.video-open {
+.subscription-banner {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--tg-theme-secondary-bg-color, rgba(0, 0, 0, 0.06));
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.subscription-banner--active {
+  color: var(--tg-theme-hint-color, #6b7280);
+}
+
+.video-card--locked .video-placeholder {
+  cursor: default;
+}
+
+.video-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  pointer-events: none;
+}
+
+.subscription-badge {
+  display: inline-block;
+  margin: 10px 16px 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fff;
+  background: #7c3aed;
+}
+
+.subscription-cta {
   margin: 12px 16px 16px;
   width: calc(100% - 32px);
+}
+
+.video-open[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .submission-item {

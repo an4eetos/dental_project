@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 
+	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 )
@@ -42,6 +43,9 @@ func (uc *TelegramLogin) Execute(ctx context.Context, initData string) (LoginRes
 	})
 	if err != nil {
 		return LoginResult{}, err
+	}
+	if user.Blocked {
+		return LoginResult{}, domainerrors.ErrUserBlocked
 	}
 
 	token, err := uc.Tokens.Issue(ctx, user)

@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	MinHour        = 9
-	MaxHour        = 20
-	MaxDaysAhead   = 90
-	TimeLayout     = "15:04"
-	DateLayout     = "2006-01-02"
+	MinHour      = 9
+	MaxHour      = 20
+	MaxDaysAhead = 90
+	TimeLayout   = "15:04"
+	DateLayout   = "2006-01-02"
 )
 
 // ParsePreferredDate parses YYYY-MM-DD and validates it is today or later within MaxDaysAhead.
