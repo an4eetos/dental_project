@@ -19,6 +19,7 @@ type Config struct {
 	GeminiHTTPTimeout       time.Duration
 	TelegramDownloadTimeout time.Duration
 	MaxImageDimension       int
+	MaxContentMediaBytes    int
 
 	DatabaseURL      string
 	JWTSecret        string
@@ -49,6 +50,7 @@ func Load() (Config, error) {
 		GeminiHTTPTimeout:       getDurationEnv("GEMINI_HTTP_TIMEOUT", 60*time.Second),
 		TelegramDownloadTimeout: getDurationEnv("TELEGRAM_DOWNLOAD_TIMEOUT", 30*time.Second),
 		MaxImageDimension:       getIntEnv("MAX_IMAGE_DIMENSION", 1024),
+		MaxContentMediaBytes:    getIntEnv("MAX_CONTENT_MEDIA_BYTES", 20*1024*1024),
 		JWTTTL:                  getDurationEnv("JWT_TTL", 24*time.Hour),
 		TelegramAuthMaxAge:      getDurationEnv("TELEGRAM_AUTH_MAX_AGE", 24*time.Hour),
 		PredictionExamplesPath:  getEnv("PREDICTION_EXAMPLES_PATH", "data/prediction_examples.xlsx"),

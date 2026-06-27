@@ -25,6 +25,7 @@ import (
 	adminhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/admin"
 	appointmenthandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/appointment"
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
+	contenthandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/content"
 	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
 	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
 	subscriptionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/subscription"
@@ -34,7 +35,9 @@ import (
 	"github.com/anuarkuanysh/dental_project/internal/telegrambot"
 	authuc "github.com/anuarkuanysh/dental_project/internal/usecase/auth"
 	adminuc "github.com/anuarkuanysh/dental_project/internal/usecase/admin"
+	admincontentuc "github.com/anuarkuanysh/dental_project/internal/usecase/admin/content"
 	appointmentuc "github.com/anuarkuanysh/dental_project/internal/usecase/appointment"
+	contentuc "github.com/anuarkuanysh/dental_project/internal/usecase/content"
 	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
 	predictionuc "github.com/anuarkuanysh/dental_project/internal/usecase/prediction"
 	subscriptionuc "github.com/anuarkuanysh/dental_project/internal/usecase/subscription"
@@ -55,6 +58,8 @@ func Module() fx.Option {
 			provideAppointmentRepo,
 			providePhotoSubmissionRepo,
 			provideStatsRepo,
+			provideContentRepo,
+			provideContentMediaRepo,
 			provideSubscriptionRepo,
 			provideInvoicePayloadSigner,
 			provideTelegramPayments,
@@ -89,6 +94,16 @@ func Module() fx.Option {
 			provideAdminGetUser,
 			provideAdminUpdateUser,
 			provideAdminSetBlocked,
+			provideContentListPublished,
+			provideContentGetByID,
+			provideContentGetMedia,
+			provideAdminContentList,
+			provideAdminContentGet,
+			provideAdminContentCreate,
+			provideAdminContentUpdate,
+			provideAdminContentDelete,
+			provideAdminContentReorder,
+			provideAdminContentUploadMedia,
 			providePredictionExamples,
 			provideTextGenerator,
 			providePredict,
@@ -101,6 +116,8 @@ func Module() fx.Option {
 			newAppointmentHandler,
 			newPhotoReviewHandler,
 			newAdminHandler,
+			newAdminContentHandler,
+			newContentHandler,
 			newPredictionHandler,
 			newSubscriptionHandler,
 			newGinEngine,
@@ -174,6 +191,14 @@ func providePhotoSubmissionRepo(pool *pgxpool.Pool) port.PhotoSubmissionReposito
 
 func provideStatsRepo(pool *pgxpool.Pool) port.StatsRepository {
 	return postgresadapter.NewStatsRepository(pool)
+}
+
+func provideContentRepo(pool *pgxpool.Pool) port.ContentRepository {
+	return postgresadapter.NewContentRepository(pool)
+}
+
+func provideContentMediaRepo(pool *pgxpool.Pool) port.ContentMediaRepository {
+	return postgresadapter.NewContentMediaRepository(pool)
 }
 
 func provideSubscriptionRepo(pool *pgxpool.Pool) port.SubscriptionRepository {
@@ -438,6 +463,75 @@ func provideAdminSetBlocked(users port.UserRepository) *adminuc.SetBlocked {
 	return &adminuc.SetBlocked{Users: users}
 }
 
+func provideContentListPublished(
+	content port.ContentRepository,
+	checker port.SubscriptionChecker,
+	users port.UserRepository,
+) *contentuc.ListPublished {
+	return &contentuc.ListPublished{Content: content, Checker: checker, Users: users}
+}
+
+func provideContentGetByID(
+	content port.ContentRepository,
+	checker port.SubscriptionChecker,
+	users port.UserRepository,
+) *contentuc.GetByID {
+	return &contentuc.GetByID{Content: content, Checker: checker, Users: users}
+}
+
+func provideContentGetMedia(
+	content port.ContentRepository,
+	media port.ContentMediaRepository,
+	checker port.SubscriptionChecker,
+	users port.UserRepository,
+) *contentuc.GetMedia {
+	return &contentuc.GetMedia{Content: content, Media: media, Checker: checker, Users: users}
+}
+
+func provideAdminContentList(content port.ContentRepository, users port.UserRepository) *admincontentuc.List {
+	return &admincontentuc.List{Content: content, Users: users}
+}
+
+func provideAdminContentGet(content port.ContentRepository, users port.UserRepository) *admincontentuc.Get {
+	return &admincontentuc.Get{Content: content, Users: users}
+}
+
+func provideAdminContentCreate(
+	content port.ContentRepository,
+	media port.ContentMediaRepository,
+	users port.UserRepository,
+) *admincontentuc.Create {
+	return &admincontentuc.Create{Content: content, Media: media, Users: users}
+}
+
+func provideAdminContentUpdate(
+	content port.ContentRepository,
+	media port.ContentMediaRepository,
+	users port.UserRepository,
+) *admincontentuc.Update {
+	return &admincontentuc.Update{Content: content, Media: media, Users: users}
+}
+
+func provideAdminContentDelete(
+	content port.ContentRepository,
+	media port.ContentMediaRepository,
+	users port.UserRepository,
+) *admincontentuc.Delete {
+	return &admincontentuc.Delete{Content: content, Media: media, Users: users}
+}
+
+func provideAdminContentReorder(content port.ContentRepository, users port.UserRepository) *admincontentuc.Reorder {
+	return &admincontentuc.Reorder{Content: content, Users: users}
+}
+
+func provideAdminContentUploadMedia(
+	media port.ContentMediaRepository,
+	images port.ImageProcessor,
+	users port.UserRepository,
+) *admincontentuc.UploadMedia {
+	return &admincontentuc.UploadMedia{Media: media, Images: images, Users: users}
+}
+
 func provideTextGenerator(
 	cfg config.Config,
 	geminiHTTP infrahttp.GeminiHTTPClient,
@@ -582,6 +676,40 @@ func newAdminHandler(
 	}
 }
 
+func newAdminContentHandler(
+	list *admincontentuc.List,
+	get *admincontentuc.Get,
+	create *admincontentuc.Create,
+	update *admincontentuc.Update,
+	deleteUC *admincontentuc.Delete,
+	reorder *admincontentuc.Reorder,
+	upload *admincontentuc.UploadMedia,
+	cfg config.Config,
+) *adminhandler.ContentHandler {
+	return &adminhandler.ContentHandler{
+		ListUC:        list,
+		GetUC:         get,
+		CreateUC:      create,
+		UpdateUC:      update,
+		DeleteUC:      deleteUC,
+		ReorderUC:     reorder,
+		UploadMediaUC: upload,
+		MaxMediaBytes: cfg.MaxContentMediaBytes,
+	}
+}
+
+func newContentHandler(
+	list *contentuc.ListPublished,
+	get *contentuc.GetByID,
+	getMedia *contentuc.GetMedia,
+) *contenthandler.Handler {
+	return &contenthandler.Handler{
+		ListPublishedUC: list,
+		GetByIDUC:       get,
+		GetMediaUC:      getMedia,
+	}
+}
+
 func newGinEngine(
 	cfg config.Config,
 	log *slog.Logger,
@@ -589,6 +717,8 @@ func newGinEngine(
 	appt *appointmenthandler.Handler,
 	photoReview *photoreviewhandler.Handler,
 	adminH *adminhandler.Handler,
+	adminContentH *adminhandler.ContentHandler,
+	contentH *contenthandler.Handler,
 	predict *predictionhandler.Handler,
 	subscriptionH *subscriptionhandler.Handler,
 	submitPhoto *photoreviewuc.SubmitFromTelegram,
@@ -611,6 +741,8 @@ func newGinEngine(
 		AppointmentH:      appt,
 		PhotoReviewH:      photoReview,
 		AdminH:            adminH,
+		AdminContentH:     adminContentH,
+		ContentH:          contentH,
 		PredictionH:       predict,
 		SubscriptionH:     subscriptionH,
 		SubmitPhoto:       submitPhoto,

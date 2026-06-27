@@ -77,6 +77,16 @@ func statusForCode(code string) int {
 		return http.StatusServiceUnavailable
 	case domainerrors.ErrInvoiceLinkFailed.Code():
 		return http.StatusBadGateway
+	case domainerrors.ErrContentNotFound.Code(),
+		domainerrors.ErrContentMediaNotFound.Code():
+		return http.StatusNotFound
+	case domainerrors.ErrInvalidContentBlocks.Code(),
+		domainerrors.ErrInvalidYouTubeID.Code(),
+		domainerrors.ErrInvalidContentAccess.Code(),
+		domainerrors.ErrInvalidContentTitle.Code(),
+		domainerrors.ErrInvalidContentMedia.Code(),
+		domainerrors.ErrContentMediaTooLarge.Code():
+		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
 	}

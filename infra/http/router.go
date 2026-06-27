@@ -12,6 +12,7 @@ import (
 	adminhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/admin"
 	"github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/appointment"
 	authhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/auth"
+	contenthandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/content"
 	jwtmiddleware "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/middleware"
 	photoreviewhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/photo_review"
 	predictionhandler "github.com/anuarkuanysh/dental_project/internal/adapters/driving/http/prediction"
@@ -32,6 +33,8 @@ type RouterParams struct {
 	AppointmentH   *appointment.Handler
 	PhotoReviewH   *photoreviewhandler.Handler
 	AdminH         *adminhandler.Handler
+	AdminContentH  *adminhandler.ContentHandler
+	ContentH       *contenthandler.Handler
 	PredictionH    *predictionhandler.Handler
 	SubscriptionH  *subscriptionhandler.Handler
 	SubmitPhoto    *photoreviewuc.SubmitFromTelegram
@@ -101,6 +104,24 @@ func NewRouter(p RouterParams) *gin.Engine {
 		adminGroup.GET("/users/:id", p.AdminH.GetUser)
 		adminGroup.PATCH("/users/:id", p.AdminH.UpdateUser)
 		adminGroup.PATCH("/users/:id/block", p.AdminH.SetBlocked)
+	}
+
+	if p.AdminContentH != nil {
+		adminContent := protected.Group("/admin/content")
+		adminContent.Use(jwtmiddleware.RequireAdmin())
+		adminContent.GET("", p.AdminContentH.List)
+		adminContent.POST("", p.AdminContentH.Create)
+		adminContent.PATCH("/reorder", p.AdminContentH.Reorder)
+		adminContent.POST("/media", p.AdminContentH.UploadMedia)
+		adminContent.GET("/:id", p.AdminContentH.Get)
+		adminContent.PUT("/:id", p.AdminContentH.Update)
+		adminContent.DELETE("/:id", p.AdminContentH.Delete)
+	}
+
+	if p.ContentH != nil {
+		protected.GET("/content", p.ContentH.List)
+		protected.GET("/content/media/:id", p.ContentH.GetMedia)
+		protected.GET("/content/:id", p.ContentH.Get)
 	}
 
 	if p.PredictionH != nil {

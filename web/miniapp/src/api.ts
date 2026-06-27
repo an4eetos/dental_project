@@ -482,3 +482,159 @@ export async function createSubscriptionInvoice(
     body: JSON.stringify({}),
   });
 }
+
+export type ContentBlock = {
+  type: "text" | "youtube" | "image" | "video";
+  data: Record<string, unknown>;
+};
+
+export type ContentItem = {
+  id: number;
+  title: string;
+  description?: string;
+  access: "public" | "subscription";
+  locked: boolean;
+  blocks: ContentBlock[];
+  sort_order?: number;
+};
+
+export type ContentListResponse = {
+  items: ContentItem[];
+};
+
+export type AdminContentItem = {
+  id: number;
+  title: string;
+  description?: string;
+  access: "public" | "subscription";
+  published: boolean;
+  sort_order: number;
+  blocks: ContentBlock[];
+};
+
+export type AdminContentListResponse = {
+  items: AdminContentItem[];
+};
+
+export type SaveContentPayload = {
+  title: string;
+  description?: string;
+  access: "public" | "subscription";
+  published: boolean;
+  blocks: ContentBlock[];
+};
+
+export async function listContent(token: string): Promise<ContentListResponse> {
+  return request<ContentListResponse>("/content", {
+    method: "GET",
+    token,
+  });
+}
+
+export async function fetchContentMediaUrl(token: string, mediaId: number): Promise<string> {
+  const url = `${API_BASE}/content/media/${mediaId}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new ApiError(`Не удалось загрузить медиа: ${detail}`, 0, "network_error");
+  }
+  if (!res.ok) {
+    throw new ApiError("Не удалось загрузить медиа", res.status);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function listAdminContent(token: string): Promise<AdminContentListResponse> {
+  return request<AdminContentListResponse>("/admin/content", {
+    method: "GET",
+    token,
+  });
+}
+
+export async function getAdminContent(token: string, id: number): Promise<AdminContentItem> {
+  return request<AdminContentItem>(`/admin/content/${id}`, {
+    method: "GET",
+    token,
+  });
+}
+
+export async function createAdminContent(
+  token: string,
+  body: SaveContentPayload,
+): Promise<AdminContentItem> {
+  return request<AdminContentItem>("/admin/content", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateAdminContent(
+  token: string,
+  id: number,
+  body: SaveContentPayload,
+): Promise<AdminContentItem> {
+  return request<AdminContentItem>(`/admin/content/${id}`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteAdminContent(token: string, id: number): Promise<void> {
+  await request<void>(`/admin/content/${id}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function reorderAdminContent(token: string, ids: number[]): Promise<void> {
+  await request<void>("/admin/content/reorder", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export async function uploadAdminContentMedia(
+  token: string,
+  file: File,
+  contentItemId?: number,
+): Promise<{ media_id: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  if (contentItemId != null) {
+    form.append("content_item_id", String(contentItemId));
+  }
+
+  const url = `${API_BASE}/admin/content/media`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new ApiError(`Не удалось загрузить файл: ${detail}`, 0, "network_error");
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    let message = fallbackMessage(res.status, text);
+    try {
+      const parsed = JSON.parse(text) as { message?: string };
+      if (parsed.message) message = parsed.message;
+    } catch {
+      // keep fallback
+    }
+    throw new ApiError(message, res.status);
+  }
+  return JSON.parse(text) as { media_id: number };
+}

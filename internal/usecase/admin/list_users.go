@@ -23,7 +23,7 @@ type ListUsersInput struct {
 }
 
 func (uc *ListUsers) Execute(ctx context.Context, in ListUsersInput) ([]identity.User, error) {
-	if err := requireAdmin(ctx, uc.Users, in.AdminUserID); err != nil {
+	if err := RequireAdmin(ctx, uc.Users, in.AdminUserID); err != nil {
 		return nil, err
 	}
 
@@ -44,7 +44,7 @@ type GetUser struct {
 }
 
 func (uc *GetUser) Execute(ctx context.Context, adminUserID, targetUserID int64) (admindomain.UserOverview, error) {
-	if err := requireAdmin(ctx, uc.Users, adminUserID); err != nil {
+	if err := RequireAdmin(ctx, uc.Users, adminUserID); err != nil {
 		return admindomain.UserOverview{}, err
 	}
 	return uc.Users.GetOverviewByID(ctx, targetUserID)

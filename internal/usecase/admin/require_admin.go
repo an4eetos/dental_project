@@ -8,7 +8,7 @@ import (
 	"github.com/anuarkuanysh/dental_project/internal/port"
 )
 
-func requireAdmin(ctx context.Context, users port.UserRepository, adminUserID int64) error {
+func RequireAdmin(ctx context.Context, users port.UserRepository, adminUserID int64) error {
 	user, err := users.GetByID(ctx, adminUserID)
 	if err != nil {
 		return err

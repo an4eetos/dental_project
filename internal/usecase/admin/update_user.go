@@ -24,7 +24,7 @@ type UpdateUserInput struct {
 }
 
 func (uc *UpdateUser) Execute(ctx context.Context, in UpdateUserInput) (identity.User, error) {
-	if err := requireAdmin(ctx, uc.Users, in.AdminUserID); err != nil {
+	if err := RequireAdmin(ctx, uc.Users, in.AdminUserID); err != nil {
 		return identity.User{}, err
 	}
 	if in.AdminUserID == in.TargetUserID {

@@ -373,3 +373,111 @@ body[data-theme="dark"] {
   font-size: 1.4rem;
   font-weight: 700;
 }
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.content-card {
+  margin-bottom: 12px;
+}
+
+.content-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.content-block--text {
+  line-height: 1.5;
+}
+
+.content-media-image,
+.content-media-video {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.content-lock-placeholder {
+  min-height: 160px;
+  position: relative;
+}
+
+.admin-content-card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.admin-content-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 0.75rem;
+}
+
+.admin-content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.block-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.block-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.block-editor-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.block-editor-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.block-editor-text {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error.hidden {
+  display: none;
+}
+
+.error {
+  color: #c0392b;
+  margin: 0;
+}

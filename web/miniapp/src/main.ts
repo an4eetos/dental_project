@@ -9,6 +9,7 @@ import {
   getAdminStatistics,
   getAdminUser,
   listAdminUsers,
+  listContent,
   setAdminUserBlocked,
   updateAdminUser,
   getSubmission,
@@ -33,18 +34,16 @@ import {
   type SubscriptionStatus,
 } from "./api";
 import {
+  buildAdminContentRoot,
+  type AdminContentState,
+} from "./admin/content-ui";
+import { renderContentItemCard } from "./content/render-patient";
+import {
   PREDICTION_INPUT_FIELDS,
   PREDICTION_OUTPUT_FIELDS,
   type PredictionInputKey,
 } from "./prediction-config";
 import { clearToken, loadToken, saveToken } from "./storage";
-import {
-  YOUTUBE_VIDEOS,
-  youtubeEmbedUrl,
-  youtubeThumbnailUrl,
-  youtubeWatchUrl,
-  type YouTubeVideo,
-} from "./videos-config";
 
 const tg = window.Telegram?.WebApp;
 
@@ -379,101 +378,6 @@ function buildPredictionContent(token: string): HTMLElement {
   return stack;
 }
 
-function buildVideoCard(
-  video: YouTubeVideo,
-  subscription: SubscriptionStatus,
-  token: string,
-  onSubscriptionChange: () => void,
-): HTMLElement {
-  const locked = video.access === "subscription" && !subscription.active;
-  const card = el("article", locked ? "card video-card video-card--locked" : "card video-card");
-  card.append(el("h3", "video-title", video.title));
-  if (video.description) {
-    card.append(el("p", "muted video-desc", video.description));
-  }
-  if (locked) {
-    card.append(el("span", "subscription-badge", "Только для подписчиков"));
-  }
-
-  const playerHost = el("div", "video-player");
-
-  if (locked) {
-    const lockedView = document.createElement("div");
-    lockedView.className = "video-placeholder";
-
-    const thumb = document.createElement("img");
-    thumb.src = youtubeThumbnailUrl(video.youtubeId);
-    thumb.alt = "";
-    thumb.className = "video-thumb";
-    thumb.loading = "lazy";
-
-    const overlay = el("div", "video-lock-overlay");
-    overlay.append(
-      el("span", undefined, "🔒"),
-      el("p", undefined, "Эксклюзивный материал для подписчиков"),
-    );
-
-    lockedView.append(thumb, overlay);
-    playerHost.append(lockedView);
-
-    const subscribeBtn = document.createElement("button");
-    subscribeBtn.type = "button";
-    subscribeBtn.className = "button primary subscription-cta";
-    subscribeBtn.textContent = `Оформить подписку — ${subscription.stars_price} ⭐`;
-    subscribeBtn.addEventListener("click", () => {
-      openSubscriptionInvoice(token, onSubscriptionChange);
-    });
-    card.append(playerHost, subscribeBtn);
-    return card;
-  }
-
-  const playBtn = document.createElement("button");
-  playBtn.type = "button";
-  playBtn.className = "video-placeholder";
-  playBtn.setAttribute("aria-label", `Смотреть: ${video.title}`);
-
-  const thumb = document.createElement("img");
-  thumb.src = youtubeThumbnailUrl(video.youtubeId);
-  thumb.alt = "";
-  thumb.className = "video-thumb";
-  thumb.loading = "lazy";
-
-  const playIcon = el("span", "video-play", "▶");
-  playBtn.append(thumb, playIcon);
-
-  playBtn.addEventListener("click", () => {
-    const iframe = document.createElement("iframe");
-    iframe.src = youtubeEmbedUrl(video.youtubeId);
-    iframe.title = video.title;
-    iframe.className = "video-embed";
-    iframe.setAttribute(
-      "allow",
-      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-    );
-    iframe.allowFullscreen = true;
-    playerHost.replaceChildren(iframe);
-  });
-
-  playerHost.append(playBtn);
-  card.append(playerHost);
-
-  const openExternal = document.createElement("button");
-  openExternal.type = "button";
-  openExternal.className = "button video-open";
-  openExternal.textContent = "Открыть в YouTube";
-  openExternal.addEventListener("click", () => {
-    const url = youtubeWatchUrl(video.youtubeId);
-    if (tg?.openLink) {
-      tg.openLink(url);
-    } else {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  });
-  card.append(openExternal);
-
-  return card;
-}
-
 function buildVideosContent(
   token: string,
   subscription: SubscriptionStatus,
@@ -497,19 +401,45 @@ function buildVideosContent(
     stack.append(banner);
   }
 
-  if (YOUTUBE_VIDEOS.length === 0) {
-    stack.append(
-      el("p", "muted", "Видео скоро появятся. Добавьте ссылки в videos-config.ts."),
-    );
-    return stack;
-  }
-
-  const list = el("section", "list video-list");
-  for (const video of YOUTUBE_VIDEOS) {
-    list.append(buildVideoCard(video, subscription, token, onSubscriptionChange));
-  }
-  stack.append(list);
+  const listHost = el("section", "list video-list");
+  stack.append(listHost);
+  void loadVideosContent(token, subscription, onSubscriptionChange, listHost);
   return stack;
+}
+
+async function loadVideosContent(
+  token: string,
+  subscription: SubscriptionStatus,
+  onSubscriptionChange: () => void,
+  listHost: HTMLElement,
+): Promise<void> {
+  listHost.replaceChildren(el("p", "muted", "Загрузка материалов…"));
+  try {
+    const data = await listContent(token);
+    listHost.replaceChildren();
+    if (data.items.length === 0) {
+      listHost.append(el("p", "muted", "Материалы скоро появятся."));
+      return;
+    }
+    for (const item of data.items) {
+      listHost.append(
+        renderContentItemCard(item, {
+          token,
+          subscription,
+          onSubscriptionChange,
+          openSubscriptionInvoice,
+        }),
+      );
+    }
+  } catch (err) {
+    listHost.replaceChildren(
+      el(
+        "p",
+        "muted",
+        err instanceof ApiError ? err.message : "Не удалось загрузить материалы",
+      ),
+    );
+  }
 }
 
 function buildPatientTabContent(
@@ -890,9 +820,15 @@ function roleLabel(role: string): string {
 const ADMIN_TABS = [
   { id: "stats" as const, label: "Статистика", title: "Статистика клиники", subtitle: "Панель администратора" },
   { id: "users" as const, label: "Пользователи", title: "Пользователи", subtitle: "Просмотр и редактирование" },
+  { id: "content" as const, label: "Контент", title: "Обучающие материалы", subtitle: "Видео, тексты и медиа" },
 ];
 
-function renderAdminDashboard(token: string, activeTab: "stats" | "users" = "stats"): void {
+let adminContentState: AdminContentState = { tab: "list" };
+
+function renderAdminDashboard(
+  token: string,
+  activeTab: "stats" | "users" | "content" = "stats",
+): void {
   const tabs = el("nav", "tabs");
   const contentHost = el("div", "tab-content");
 
@@ -901,7 +837,12 @@ function renderAdminDashboard(token: string, activeTab: "stats" | "users" = "sta
     btn.type = "button";
     btn.className = `tab${tab.id === activeTab ? " active" : ""}`;
     btn.textContent = tab.label;
-    btn.addEventListener("click", () => renderAdminDashboard(token, tab.id));
+    btn.addEventListener("click", () => {
+      if (tab.id !== "content") {
+        adminContentState = { tab: "list" };
+      }
+      renderAdminDashboard(token, tab.id);
+    });
     tabs.append(btn);
   }
 
@@ -911,6 +852,14 @@ function renderAdminDashboard(token: string, activeTab: "stats" | "users" = "sta
       break;
     case "users":
       contentHost.append(buildAdminUsersContent(token));
+      break;
+    case "content":
+      contentHost.append(
+        buildAdminContentRoot(token, adminContentState, (next) => {
+          adminContentState = next;
+          renderAdminDashboard(token, "content");
+        }),
+      );
       break;
   }
 
