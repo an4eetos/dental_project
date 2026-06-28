@@ -81,6 +81,7 @@ func Module() fx.Option {
 			provideSuggestSlots,
 			provideSendAppointmentReminders,
 			providePurgeOutdatedAppointments,
+			providePurgeStaleSubmissions,
 			provideAppointmentLocation,
 			provideSubmitPhoto,
 			provideListPendingSubmissions,
@@ -123,7 +124,7 @@ func Module() fx.Option {
 			newGinEngine,
 			newHTTPServer,
 		),
-		fx.Invoke(runMigrations, startHTTPServer, cron.RegisterAppointmentReminders, cron.RegisterAppointmentCleanup),
+		fx.Invoke(runMigrations, startHTTPServer, cron.RegisterAppointmentReminders, cron.RegisterAppointmentCleanup, cron.RegisterSubmissionCleanup),
 	)
 }
 
@@ -376,6 +377,18 @@ func provideAppointmentLocation(cfg config.Config, log *slog.Logger) (*time.Loca
 	return loc, nil
 }
 
+func providePurgeStaleSubmissions(
+	repo port.PhotoSubmissionRepository,
+	clock port.Clock,
+	cfg config.Config,
+) *photoreviewuc.PurgeStale {
+	return &photoreviewuc.PurgeStale{
+		Submissions: repo,
+		Clock:       clock,
+		MaxAge:      cfg.SubmissionMaxAge,
+	}
+}
+
 func provideSubmitPhoto(
 	users port.UserRepository,
 	submissions port.PhotoSubmissionRepository,
@@ -383,15 +396,17 @@ func provideSubmitPhoto(
 	tg *telegrambot.Client,
 	doctors port.DoctorRegistry,
 	admins port.AdminRegistry,
+	cfg config.Config,
 ) *photoreviewuc.SubmitFromTelegram {
 	return &photoreviewuc.SubmitFromTelegram{
-		Users:       users,
-		Submissions: submissions,
-		Images:      images,
-		Downloader:  tg,
-		Sender:      tg,
-		Doctors:     doctors,
-		Admins:      admins,
+		Users:                   users,
+		Submissions:             submissions,
+		Images:                  images,
+		Downloader:              tg,
+		Sender:                  tg,
+		Doctors:                 doctors,
+		Admins:                  admins,
+		MaxSubmissionVideoBytes: cfg.MaxSubmissionVideoBytes,
 	}
 }
 

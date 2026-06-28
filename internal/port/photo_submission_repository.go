@@ -16,4 +16,5 @@ type PhotoSubmissionRepository interface {
 	SaveAIDraft(ctx context.Context, id int64, draft model.Analysis) error
 	MarkAnswered(ctx context.Context, id int64, doctorUserID int64, response string, at time.Time) error
 	GetImageData(ctx context.Context, id int64) ([]byte, string, error)
+	DeletePendingOlderThan(ctx context.Context, before time.Time) (int64, error)
 }

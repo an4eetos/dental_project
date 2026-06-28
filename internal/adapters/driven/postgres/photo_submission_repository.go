@@ -25,14 +25,15 @@ func NewPhotoSubmissionRepository(pool *pgxpool.Pool) *PhotoSubmissionRepository
 
 func (r *PhotoSubmissionRepository) Create(ctx context.Context, params photoreview.CreateParams) (photoreview.Submission, error) {
 	const q = `
-INSERT INTO photo_submissions (user_id, telegram_file_id, image_data, image_mime, status, created_at)
-VALUES ($1, $2, $3, $4, $5, NOW())
-RETURNING id, user_id, telegram_file_id, image_mime, status, ai_draft, COALESCE(doctor_response, ''),
+INSERT INTO photo_submissions (user_id, telegram_file_id, media_type, image_data, image_mime, status, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+RETURNING id, user_id, telegram_file_id, media_type, image_mime, status, ai_draft, COALESCE(doctor_response, ''),
           COALESCE(responded_by, 0), responded_at, created_at`
 
 	row := r.pool.QueryRow(ctx, q,
 		params.UserID,
 		params.TelegramFileID,
+		params.MediaType.String(),
 		params.ImageData,
 		params.ImageMIME,
 		photoreview.StatusPending.String(),
@@ -43,7 +44,7 @@ RETURNING id, user_id, telegram_file_id, image_mime, status, ai_draft, COALESCE(
 func (r *PhotoSubmissionRepository) GetByID(ctx context.Context, id int64) (photoreview.SubmissionWithPatient, error) {
 	const q = `
 SELECT
-    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
+    s.id, s.user_id, s.telegram_file_id, s.media_type, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
     COALESCE(s.responded_by, 0), s.responded_at, s.created_at,
     u.id, u.telegram_id, COALESCE(u.username, ''), u.first_name, COALESCE(u.last_name, '')
 FROM photo_submissions s
@@ -61,7 +62,7 @@ WHERE s.id = $1`
 func (r *PhotoSubmissionRepository) ListByStatus(ctx context.Context, status photoreview.Status) ([]photoreview.SubmissionWithPatient, error) {
 	const q = `
 SELECT
-    s.id, s.user_id, s.telegram_file_id, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
+    s.id, s.user_id, s.telegram_file_id, s.media_type, s.image_mime, s.status, s.ai_draft, COALESCE(s.doctor_response, ''),
     COALESCE(s.responded_by, 0), s.responded_at, s.created_at,
     u.id, u.telegram_id, COALESCE(u.username, ''), u.first_name, COALESCE(u.last_name, '')
 FROM photo_submissions s
@@ -144,9 +145,22 @@ func (r *PhotoSubmissionRepository) GetImageData(ctx context.Context, id int64) 
 	return data, mime, err
 }
 
+func (r *PhotoSubmissionRepository) DeletePendingOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	const q = `
+DELETE FROM photo_submissions
+WHERE status = $1 AND created_at < $2`
+
+	tag, err := r.pool.Exec(ctx, q, photoreview.StatusPending.String(), before)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func scanSubmissionWithPatient(row pgxRowScanner) (photoreview.SubmissionWithPatient, error) {
 	var item photoreview.SubmissionWithPatient
 	var status string
+	var mediaType string
 	var draftRaw []byte
 	var respondedAt *time.Time
 
@@ -154,6 +168,7 @@ func scanSubmissionWithPatient(row pgxRowScanner) (photoreview.SubmissionWithPat
 		&item.Submission.ID,
 		&item.Submission.UserID,
 		&item.Submission.TelegramFileID,
+		&mediaType,
 		&item.Submission.ImageMIME,
 		&status,
 		&draftRaw,
@@ -171,6 +186,7 @@ func scanSubmissionWithPatient(row pgxRowScanner) (photoreview.SubmissionWithPat
 		return photoreview.SubmissionWithPatient{}, err
 	}
 
+	item.Submission.MediaType = photoreview.MediaType(mediaType)
 	item.Submission.Status = photoreview.Status(status)
 	item.Submission.RespondedAt = respondedAt
 	if len(draftRaw) > 0 {
@@ -185,6 +201,7 @@ func scanSubmissionWithPatient(row pgxRowScanner) (photoreview.SubmissionWithPat
 func scanSubmission(row pgxRowScanner) (photoreview.Submission, error) {
 	var sub photoreview.Submission
 	var status string
+	var mediaType string
 	var draftRaw []byte
 	var respondedAt *time.Time
 
@@ -192,6 +209,7 @@ func scanSubmission(row pgxRowScanner) (photoreview.Submission, error) {
 		&sub.ID,
 		&sub.UserID,
 		&sub.TelegramFileID,
+		&mediaType,
 		&sub.ImageMIME,
 		&status,
 		&draftRaw,
@@ -204,6 +222,7 @@ func scanSubmission(row pgxRowScanner) (photoreview.Submission, error) {
 		return photoreview.Submission{}, err
 	}
 
+	sub.MediaType = photoreview.MediaType(mediaType)
 	sub.Status = photoreview.Status(status)
 	sub.RespondedAt = respondedAt
 	if len(draftRaw) > 0 {

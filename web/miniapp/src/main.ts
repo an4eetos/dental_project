@@ -4,7 +4,7 @@ import {
   authTelegram,
   createAppointment,
   createSubscriptionInvoice,
-  fetchSubmissionPhotoUrl,
+  fetchSubmissionMediaUrl,
   generateSubmissionDraft,
   getAdminStatistics,
   getAdminUser,
@@ -686,6 +686,13 @@ function renderSubmissionList(
     if (queue === "answered" && item.responded_at) {
       card.append(el("p", "muted", `Ответ: ${formatDateTime(item.responded_at)}`));
     }
+    card.append(
+      el(
+        "p",
+        "muted",
+        item.media_type === "video" ? "Видео" : "Фото",
+      ),
+    );
     card.addEventListener("click", () => {
       renderSubmissionDetail(token, item.id, queue, onBack);
     });
@@ -702,14 +709,14 @@ function renderSubmissionDetail(
 ): void {
   const shell = el("div", "stack");
   shell.append(el("p", "status", "Загрузка…"));
-  renderShell(shell, "Просмотр фото", "Детали заявки");
+  renderShell(shell, "Просмотр заявки", "Детали фото или видео");
 
   void (async () => {
     try {
       const submission = await getSubmission(token, submissionId);
-      const photoUrl = await fetchSubmissionPhotoUrl(token, submissionId);
+      const mediaUrl = await fetchSubmissionMediaUrl(token, submissionId);
       shell.replaceChildren(
-        buildSubmissionDetailContent(token, submission, photoUrl, queue, onBack),
+        buildSubmissionDetailContent(token, submission, mediaUrl, queue, onBack),
       );
     } catch (err) {
       shell.replaceChildren(
@@ -726,7 +733,7 @@ function renderSubmissionDetail(
 function buildSubmissionDetailContent(
   token: string,
   submission: PhotoSubmission,
-  photoUrl: string,
+  mediaUrl: string,
   queue: "pending" | "answered",
   onBack: () => void,
 ): HTMLElement {
@@ -743,13 +750,27 @@ function buildSubmissionDetailContent(
   card.append(
     el("p", "item-title", patientName(submission.patient)),
     el("p", "muted", `Получено: ${formatDateTime(submission.created_at)}`),
+    el(
+      "p",
+      "muted",
+      submission.media_type === "video" ? "Тип: видео" : "Тип: фото",
+    ),
   );
 
-  const img = document.createElement("img");
-  img.src = photoUrl;
-  img.alt = "Фото пациента";
-  img.className = "submission-photo";
-  card.append(img);
+  if (submission.media_type === "video") {
+    const video = document.createElement("video");
+    video.src = mediaUrl;
+    video.controls = true;
+    video.playsInline = true;
+    video.className = "submission-video";
+    card.append(video);
+  } else {
+    const img = document.createElement("img");
+    img.src = mediaUrl;
+    img.alt = "Фото пациента";
+    img.className = "submission-photo";
+    card.append(img);
+  }
   shell.append(card);
 
   if (queue === "answered") {

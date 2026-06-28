@@ -76,13 +76,17 @@ type generateResponse struct {
 	} `json:"error"`
 }
 
-// AnalyzeTeethImage sends an image to Gemini and expects JSON matching model.Analysis.
+// AnalyzeTeethImage sends photo or video bytes to Gemini and expects JSON matching model.Analysis.
 func (c *Client) AnalyzeTeethImage(ctx context.Context, image []byte, mimeType string) (*model.Analysis, error) {
 	if len(image) == 0 {
-		return nil, errors.New("empty image")
+		return nil, errors.New("empty media")
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(image)
+	prompt := teethVisionPrompt()
+	if strings.HasPrefix(strings.ToLower(mimeType), "video/") {
+		prompt = teethVideoPrompt()
+	}
 
 	body := generateRequest{
 		Contents: []contentPayload{
@@ -95,7 +99,7 @@ func (c *Client) AnalyzeTeethImage(ctx context.Context, image []byte, mimeType s
 							Data:     b64,
 						},
 					},
-					{Text: teethVisionPrompt()},
+					{Text: prompt},
 				},
 			},
 		},
@@ -131,6 +135,31 @@ STRICT RULES:
 - Informational only; not medical advice.
 
 If the image is too blurry, dark, or not showing teeth/gums clearly, lower confidence and mention it in visible_issues.
+
+LANGUAGE: All strings except confidence tokens MUST be in Russian.
+
+Respond ONLY with valid JSON (no markdown fences) exactly in this shape:
+{
+  "visible_issues": ["строка на русском"],
+  "confidence": "low|medium|high",
+  "recommendations": ["строка на русском"]
+}
+
+Use English tokens only for "confidence" (low|medium|high).
+Keep lists concise (max ~6 items each).`
+}
+
+func teethVideoPrompt() string {
+	return `You analyze a short dental video for general, non-diagnostic educational purposes.
+
+STRICT RULES:
+- Do NOT diagnose diseases or conditions. Avoid medical certainty.
+- Describe only potentially visible issues using cautious Russian wording (e.g. «возможно», «может выглядеть как»).
+- Acknowledge uncertainty and limits of one video, lighting, movement, and camera quality.
+- Hygiene suggestions only — no treatment plans.
+- Informational only; not medical advice.
+
+If the video is too blurry, dark, or not showing teeth/gums clearly, lower confidence and mention it in visible_issues.
 
 LANGUAGE: All strings except confidence tokens MUST be in Russian.
 

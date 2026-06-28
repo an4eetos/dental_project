@@ -34,6 +34,10 @@ type Config struct {
 	AppointmentCleanupInterval   time.Duration
 	AppointmentTimezone          string
 
+	SubmissionCleanupInterval time.Duration
+	SubmissionMaxAge          time.Duration
+	MaxSubmissionVideoBytes   int
+
 	SubscriptionStarsPrice   int
 	SubscriptionDuration     time.Duration
 	SubscriptionInvoiceTitle string
@@ -57,6 +61,9 @@ func Load() (Config, error) {
 		ReminderPollInterval:       getDurationEnv("REMINDER_POLL_INTERVAL", 5*time.Minute),
 		AppointmentCleanupInterval: getDurationEnv("APPOINTMENT_CLEANUP_INTERVAL", 24*time.Hour),
 		AppointmentTimezone:        getEnv("APPOINTMENT_TIMEZONE", "UTC"),
+		SubmissionCleanupInterval:  getDurationEnv("SUBMISSION_CLEANUP_INTERVAL", 24*time.Hour),
+		SubmissionMaxAge:           getDurationEnv("SUBMISSION_MAX_AGE", 10*24*time.Hour),
+		MaxSubmissionVideoBytes:    getIntEnv("MAX_SUBMISSION_VIDEO_BYTES", 20*1024*1024),
 		SubscriptionStarsPrice:     getIntEnv("SUBSCRIPTION_STARS_PRICE", 50),
 		SubscriptionDuration:     getDurationEnv("SUBSCRIPTION_DURATION", 30*24*time.Hour),
 		SubscriptionInvoiceTitle:   getEnv("SUBSCRIPTION_INVOICE_TITLE", "Подписка на эксклюзивные видео"),

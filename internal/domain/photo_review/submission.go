@@ -12,6 +12,7 @@ type Submission struct {
 	ID             int64
 	UserID         int64
 	TelegramFileID string
+	MediaType      MediaType
 	ImageMIME      string
 	Status         Status
 	AIDraft        *model.Analysis
@@ -31,6 +32,7 @@ type SubmissionWithPatient struct {
 type CreateParams struct {
 	UserID         int64
 	TelegramFileID string
+	MediaType      MediaType
 	ImageData      []byte
 	ImageMIME      string
 }

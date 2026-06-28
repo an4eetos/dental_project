@@ -288,6 +288,7 @@ export type PhotoSubmissionPatient = {
 
 export type PhotoSubmission = {
   id: number;
+  media_type: "photo" | "video";
   status: "pending" | "answered";
   created_at: string;
   responded_at?: string;
@@ -350,7 +351,7 @@ export async function respondToSubmission(
   });
 }
 
-export async function fetchSubmissionPhotoUrl(
+export async function fetchSubmissionMediaUrl(
   token: string,
   id: number,
 ): Promise<string> {
@@ -362,14 +363,17 @@ export async function fetchSubmissionPhotoUrl(
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    throw new ApiError(`Не удалось загрузить фото: ${detail}`, 0, "network_error");
+    throw new ApiError(`Не удалось загрузить медиа: ${detail}`, 0, "network_error");
   }
   if (!res.ok) {
-    throw new ApiError("Не удалось загрузить фото", res.status);
+    throw new ApiError("Не удалось загрузить медиа", res.status);
   }
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+
+/** @deprecated use fetchSubmissionMediaUrl */
+export const fetchSubmissionPhotoUrl = fetchSubmissionMediaUrl;
 
 export type AdminStatistics = {
   total_users: number;

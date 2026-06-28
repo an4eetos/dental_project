@@ -17,6 +17,7 @@ type submissionPatientResponse struct {
 
 type submissionResponse struct {
 	ID             int64                    `json:"id"`
+	MediaType      string                   `json:"media_type"`
 	Status         string                   `json:"status"`
 	CreatedAt      string                   `json:"created_at"`
 	RespondedAt    string                   `json:"responded_at,omitempty"`
@@ -33,6 +34,7 @@ type generateDraftResponse struct {
 func ToSubmissionResponse(item photoreview.SubmissionWithPatient) submissionResponse {
 	resp := submissionResponse{
 		ID:             item.Submission.ID,
+		MediaType:      item.Submission.MediaType.String(),
 		Status:         item.Submission.Status.String(),
 		CreatedAt:      formatTime(item.Submission.CreatedAt),
 		DoctorResponse: item.Submission.DoctorResponse,

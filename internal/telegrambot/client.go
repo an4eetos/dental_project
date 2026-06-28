@@ -89,6 +89,14 @@ func mimeFromExt(ext string) string {
 		return "image/png"
 	case ".webp":
 		return "image/webp"
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".mov":
+		return "video/quicktime"
+	case ".3gp":
+		return "video/3gpp"
 	default:
 		return "application/octet-stream"
 	}

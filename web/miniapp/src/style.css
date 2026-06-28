@@ -340,6 +340,15 @@ body[data-theme="dark"] {
   background: #000;
 }
 
+.submission-video {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 8px;
+  max-height: 320px;
+  background: #000;
+}
+
 .textarea {
   width: 100%;
   box-sizing: border-box;

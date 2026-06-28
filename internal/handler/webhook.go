@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
+	photoreview "github.com/anuarkuanysh/dental_project/internal/domain/photo_review"
 	"github.com/anuarkuanysh/dental_project/internal/domain/identity"
 	"github.com/anuarkuanysh/dental_project/internal/port"
 	photoreviewuc "github.com/anuarkuanysh/dental_project/internal/usecase/photo_review"
@@ -110,7 +111,8 @@ func (deps WebhookDeps) handleMessage(ctx context.Context, c *gin.Context, msg *
 		return
 	}
 
-	if len(msg.Photo) == 0 {
+	fileID, mediaType, hasMedia := msg.submissionMedia()
+	if !hasMedia {
 		_ = deps.Sender.SendText(ctx, chatID, helpText())
 		c.Status(http.StatusOK)
 		return
@@ -122,7 +124,11 @@ func (deps WebhookDeps) handleMessage(ctx context.Context, c *gin.Context, msg *
 		return
 	}
 
-	photo := msg.Photo[len(msg.Photo)-1]
+	submissionMediaType := photoreview.MediaTypePhoto
+	if mediaType == "video" {
+		submissionMediaType = photoreview.MediaTypeVideo
+	}
+
 	err := deps.SubmitPhoto.Execute(ctx, photoreviewuc.SubmitInput{
 		Profile: identity.TelegramProfile{
 			TelegramID: msg.From.ID,
@@ -130,8 +136,9 @@ func (deps WebhookDeps) handleMessage(ctx context.Context, c *gin.Context, msg *
 			FirstName:  msg.From.FirstName,
 			LastName:   msg.From.LastName,
 		},
-		ChatID: chatID,
-		FileID: photo.FileID,
+		ChatID:    chatID,
+		FileID:    fileID,
+		MediaType: submissionMediaType,
 	})
 	if err != nil {
 		deps.Log.Error("photo submission failed", "err", err)
@@ -145,26 +152,29 @@ func (deps WebhookDeps) handleMessage(ctx context.Context, c *gin.Context, msg *
 
 func welcomeText() string {
 	return "Добро пожаловать в стоматологический ассистент клиники.\n\n" +
-		"Отправьте чёткое фото зубов — врач рассмотрит его и пришлёт ответ в этот чат в течение 48 часов.\n" +
+		"Отправьте чёткое фото или короткое видео зубов — врач рассмотрит его и пришлёт ответ в этот чат в течение 48 часов.\n" +
 		"Чтобы записаться на приём, откройте Mini App через меню бота.\n\n" +
 		"⚠️ Важно:\n" +
 		"• Ответ врача — справочная информация, не медицинская консультация.\n" +
-		"• Одного фото недостаточно для полной оценки состояния зубов.\n" +
+		"• Одного фото или видео недостаточно для полной оценки состояния зубов.\n" +
 		"• При симптомах, боли, отёке или тревоге за здоровье обратитесь к стоматологу."
 }
 
 func helpText() string {
-	return "Отправьте фото зубов (не стикер и не документ без сжатого превью).\n\n" +
+	return "Отправьте фото или видео зубов (не стикер и не документ без сжатого превью).\n\n" +
 		"Врач ответит в течение 48 часов.\n" +
 		"Для записи на приём откройте Mini App в меню бота."
 }
 
 func submissionErrorText(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return "Обработка заняла слишком много времени. Попробуйте отправить фото меньшего размера."
+		return "Обработка заняла слишком много времени. Попробуйте отправить файл меньшего размера."
 	}
 	if errors.Is(err, domainerrors.ErrUserBlocked) {
 		return "Ваш аккаунт заблокирован. Обратитесь в клинику для уточнения."
 	}
-	return "Не удалось принять фото. Попробуйте ещё раз или позже."
+	if errors.Is(err, domainerrors.ErrSubmissionMediaTooLarge) {
+		return "Файл слишком большой. Отправьте видео короче или меньшего размера."
+	}
+	return "Не удалось принять фото или видео. Попробуйте ещё раз или позже."
 }

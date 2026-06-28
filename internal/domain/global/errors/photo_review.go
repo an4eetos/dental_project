@@ -5,4 +5,5 @@ var (
 	ErrSubmissionAlreadyAnswered = BaseError{Msg: "photo submission already answered", ErrC: "submission_already_answered"}
 	ErrEmptyDoctorResponse     = BaseError{Msg: "doctor response is required", ErrC: "empty_doctor_response"}
 	ErrDraftGenerationFailed   = BaseError{Msg: "failed to generate AI draft", ErrC: "draft_generation_failed"}
+	ErrSubmissionMediaTooLarge = BaseError{Msg: "submission media is too large", ErrC: "submission_media_too_large"}
 )
