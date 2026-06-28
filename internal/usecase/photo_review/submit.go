@@ -10,16 +10,6 @@ import (
 	photoreviewservice "github.com/anuarkuanysh/dental_project/internal/service/photo_review"
 )
 
-const patientAckPhotoMessage = "Фото получено.\n\n" +
-	"Врач клиники рассмотрит его и пришлёт ответ в этот чат в течение 48 часов.\n\n" +
-	"⚠️ Ответ врача — справочная информация, не медицинская консультация. " +
-	"При симптомах, боли или тревоге за здоровье обратитесь к стоматологу лично."
-
-const patientAckVideoMessage = "Видео получено.\n\n" +
-	"Врач клиники рассмотрит его и пришлёт ответ в этот чат в течение 48 часов.\n\n" +
-	"⚠️ Ответ врача — справочная информация, не медицинская консультация. " +
-	"При симптомах, боли или тревоге за здоровье обратитесь к стоматологу лично."
-
 // SubmitFromTelegram persists a patient photo or video and acknowledges receipt.
 type SubmitFromTelegram struct {
 	Users             port.UserRepository
@@ -97,9 +87,5 @@ func (uc *SubmitFromTelegram) Execute(ctx context.Context, in SubmitInput) error
 		return err
 	}
 
-	ack := patientAckPhotoMessage
-	if mediaType == photoreview.MediaTypeVideo {
-		ack = patientAckVideoMessage
-	}
-	return uc.Sender.SendText(ctx, in.ChatID, ack)
+	return uc.Sender.SendText(ctx, in.ChatID, photoreviewservice.PatientAckMessage(mediaType))
 }

@@ -7,11 +7,8 @@ import (
 	domainerrors "github.com/anuarkuanysh/dental_project/internal/domain/global/errors"
 	photoreview "github.com/anuarkuanysh/dental_project/internal/domain/photo_review"
 	"github.com/anuarkuanysh/dental_project/internal/port"
+	photoreviewservice "github.com/anuarkuanysh/dental_project/internal/service/photo_review"
 )
-
-const doctorReplyPrefix = "Ответ врача клиники по вашему фото:\n\n"
-const doctorReplySuffix = "\n\n⚠️ Справочная информация, не медицинская консультация. " +
-	"При симптомах, боли или тревоге за здоровье обратитесь к стоматологу лично."
 
 // Respond saves a doctor answer and delivers it to the patient via the bot.
 type Respond struct {
@@ -50,7 +47,7 @@ func (uc *Respond) Execute(ctx context.Context, in RespondInput) (photoreview.Su
 		return photoreview.SubmissionWithPatient{}, err
 	}
 
-	message := doctorReplyPrefix + response + doctorReplySuffix
+	message := photoreviewservice.FormatDoctorReply(item.Submission.MediaType, response)
 	if err := uc.Sender.SendText(ctx, item.Patient.TelegramID, message); err != nil {
 		return photoreview.SubmissionWithPatient{}, err
 	}

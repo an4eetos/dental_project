@@ -1,9 +1,9 @@
 package errors
 
 var (
-	ErrSubmissionNotFound      = BaseError{Msg: "photo submission not found", ErrC: "submission_not_found"}
-	ErrSubmissionAlreadyAnswered = BaseError{Msg: "photo submission already answered", ErrC: "submission_already_answered"}
-	ErrEmptyDoctorResponse     = BaseError{Msg: "doctor response is required", ErrC: "empty_doctor_response"}
-	ErrDraftGenerationFailed   = BaseError{Msg: "failed to generate AI draft", ErrC: "draft_generation_failed"}
-	ErrSubmissionMediaTooLarge = BaseError{Msg: "submission media is too large", ErrC: "submission_media_too_large"}
+	ErrSubmissionNotFound        = BaseError{Msg: "Заявка не найдена", ErrC: "submission_not_found"}
+	ErrSubmissionAlreadyAnswered = BaseError{Msg: "На эту заявку уже дан ответ", ErrC: "submission_already_answered"}
+	ErrEmptyDoctorResponse       = BaseError{Msg: "Требуется ответ врача", ErrC: "empty_doctor_response"}
+	ErrDraftGenerationFailed     = BaseError{Msg: "Не удалось сгенерировать черновик ИИ", ErrC: "draft_generation_failed"}
+	ErrSubmissionMediaTooLarge   = BaseError{Msg: "Файл слишком большой", ErrC: "submission_media_too_large"}
 )

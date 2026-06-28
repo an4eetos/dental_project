@@ -536,14 +536,14 @@ const DOCTOR_TABS: { id: DoctorTab; label: string; title: string; subtitle: stri
   {
     id: "pending",
     label: "Ожидают",
-    title: "Фото без ответа",
-    subtitle: "Ответьте в течение 48 часов",
+    title: "Заявки без ответа",
+    subtitle: "Фото и видео — ответьте в течение 48 часов",
   },
   {
     id: "answered",
     label: "Отвеченные",
-    title: "Отвеченные фото",
-    subtitle: "История ответов врача",
+    title: "Отвеченные заявки",
+    subtitle: "История ответов по фото и видео",
   },
 ];
 
@@ -646,7 +646,7 @@ function buildDoctorSubmissionQueue(
         el(
           "p",
           "muted",
-          err instanceof ApiError ? err.message : "Не удалось загрузить фото",
+          err instanceof ApiError ? err.message : "Не удалось загрузить заявки",
         ),
       );
     }
@@ -671,7 +671,9 @@ function renderSubmissionList(
       el(
         "p",
         "muted",
-        queue === "pending" ? "Нет фото, ожидающих ответа." : "Отвеченных фото пока нет.",
+        queue === "pending"
+          ? "Нет заявок (фото или видео), ожидающих ответа."
+          : "Отвеченных заявок пока нет.",
       ),
     );
     return list;
@@ -767,7 +769,8 @@ function buildSubmissionDetailContent(
   } else {
     const img = document.createElement("img");
     img.src = mediaUrl;
-    img.alt = "Фото пациента";
+    img.alt =
+      submission.media_type === "video" ? "Видео пациента" : "Фото пациента";
     img.className = "submission-photo";
     card.append(img);
   }
@@ -1061,7 +1064,7 @@ function renderAdminUserForm(
   info.append(
     el("p", "muted", `Telegram ID: ${user.telegram_id}`),
     el("p", "muted", `Записей: ${user.appointment_count}`),
-    el("p", "muted", `Фото-заявок: ${user.photo_submission_count}`),
+    el("p", "muted", `Заявок (фото/видео): ${user.photo_submission_count}`),
     el("p", "muted", `Регистрация: ${formatDateTime(user.created_at)}`),
   );
   wrap.append(info);
@@ -1169,9 +1172,9 @@ function renderAdminStats(stats: AdminStatistics): HTMLElement {
     ["Пациентов", stats.total_patients],
     ["Врачей", stats.total_doctors],
     ["Администраторов", stats.total_admins],
-    ["Всего фото-заявок", stats.total_photo_submissions],
-    ["Ожидают ответа", stats.pending_photo_submissions],
-    ["Отвечено", stats.answered_photo_submissions],
+    ["Всего заявок (фото/видео)", stats.total_photo_submissions],
+    ["Ожидают ответа (фото/видео)", stats.pending_photo_submissions],
+    ["Отвечено (фото/видео)", stats.answered_photo_submissions],
     ["Всего записей", stats.total_appointments],
     ["Записей: ожидают", stats.pending_appointments],
     ["Записей: подтверждены", stats.confirmed_appointments],

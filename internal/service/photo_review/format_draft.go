@@ -23,7 +23,7 @@ func FormatAnalysisDraft(a *model.Analysis) string {
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("\nУверенность модели / качества снимка: %s\n", confidenceLabelRU(a.Confidence)))
+	b.WriteString(fmt.Sprintf("\nУверенность модели / качества материала: %s\n", confidenceLabelRU(a.Confidence)))
 
 	b.WriteString("\nОбщие советы по гигиене (не план лечения):\n")
 	if len(a.Recommendations) == 0 {

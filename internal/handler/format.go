@@ -24,7 +24,7 @@ func FormatTelegramReply(a *model.Analysis) string {
 	}
 
 	conf := confidenceLabelRU(a.Confidence)
-	b.WriteString(fmt.Sprintf("\nУверенность модели / качества снимка: %s\n", conf))
+	b.WriteString(fmt.Sprintf("\nУверенность модели / качества материала: %s\n", conf))
 
 	b.WriteString("\nОбщие советы по гигиене (не план лечения):\n")
 	if len(a.Recommendations) == 0 {
