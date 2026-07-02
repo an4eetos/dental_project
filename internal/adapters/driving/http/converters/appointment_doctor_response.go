@@ -16,16 +16,17 @@ type PatientBriefResponse struct {
 }
 
 type DoctorAppointmentResponse struct {
-	ID            int64                `json:"id"`
-	PreferredDate string               `json:"preferred_date"`
-	PreferredTime string               `json:"preferred_time"`
-	Status        string               `json:"status"`
-	VisitType     string               `json:"visit_type,omitempty"`
-	ZoomLink      string               `json:"zoom_link,omitempty"`
-	DoctorNotes   string               `json:"doctor_notes,omitempty"`
-	NeedsZoomLink bool                 `json:"needs_zoom_link,omitempty"`
-	CreatedAt     time.Time            `json:"created_at"`
-	Patient       PatientBriefResponse `json:"patient"`
+	ID                 int64                `json:"id"`
+	PreferredDate      string               `json:"preferred_date"`
+	PreferredTime      string               `json:"preferred_time"`
+	PreferredVisitType string               `json:"preferred_visit_type,omitempty"`
+	Status             string               `json:"status"`
+	VisitType          string               `json:"visit_type,omitempty"`
+	ZoomLink           string               `json:"zoom_link,omitempty"`
+	DoctorNotes        string               `json:"doctor_notes,omitempty"`
+	NeedsZoomLink      bool                 `json:"needs_zoom_link,omitempty"`
+	CreatedAt          time.Time            `json:"created_at"`
+	Patient            PatientBriefResponse `json:"patient"`
 }
 
 func ToDoctorAppointmentResponse(item booking.AppointmentWithPatient) DoctorAppointmentResponse {
@@ -42,6 +43,9 @@ func ToDoctorAppointmentResponse(item booking.AppointmentWithPatient) DoctorAppo
 			FirstName:  item.Patient.FirstName,
 			LastName:   item.Patient.LastName,
 		},
+	}
+	if item.Appointment.PreferredVisitType.Valid() {
+		resp.PreferredVisitType = item.Appointment.PreferredVisitType.String()
 	}
 	if item.Appointment.VisitType.Valid() {
 		resp.VisitType = item.Appointment.VisitType.String()

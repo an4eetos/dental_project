@@ -45,6 +45,7 @@ func statusForCode(code string) int {
 		return http.StatusUnauthorized
 	case domainerrors.ErrInvalidPreferredDate.Code(),
 		domainerrors.ErrInvalidPreferredTime.Code(),
+		domainerrors.ErrInvalidPreferredVisitType.Code(),
 		domainerrors.ErrInvalidZoomLink.Code(),
 		domainerrors.ErrInvalidDecision.Code(),
 		domainerrors.ErrDoctorNotesRequired.Code(),

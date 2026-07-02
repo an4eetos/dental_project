@@ -12,6 +12,7 @@ type Appointment struct {
 	UserID                int64
 	PreferredDate         time.Time
 	PreferredTime         time.Time
+	PreferredVisitType    VisitType
 	Status                Status
 	VisitType             VisitType
 	ZoomLink              string
@@ -47,7 +48,8 @@ type ZoomLinkUpdate struct {
 
 // CreateInput carries validated booking parameters.
 type CreateInput struct {
-	User          identity.User
-	PreferredDate time.Time
-	PreferredTime time.Time
+	User               identity.User
+	PreferredDate      time.Time
+	PreferredTime      time.Time
+	PreferredVisitType VisitType
 }

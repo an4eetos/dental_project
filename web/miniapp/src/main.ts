@@ -230,9 +230,18 @@ function renderAppointmentsList(
       el("p", "item-title", `${a.preferred_date} в ${a.preferred_time}`),
       el("p", "muted", statusLabel(a.status)),
     );
-    const visitLabel = visitTypeLabel(a.visit_type);
+    const visitLabel =
+      a.status === "pending"
+        ? visitTypeLabel(a.preferred_visit_type)
+        : visitTypeLabel(a.visit_type);
     if (visitLabel) {
-      card.append(el("p", "muted", visitLabel));
+      card.append(
+        el(
+          "p",
+          "muted",
+          a.status === "pending" ? `Ваш запрос: ${visitLabel}` : visitLabel,
+        ),
+      );
     }
     if (a.status === "confirmed" && a.visit_type === "video" && !a.zoom_link) {
       card.append(el("p", "muted", "Ссылка на Zoom будет добавлена позже."));
@@ -273,6 +282,16 @@ function buildBookingContent(token: string): HTMLElement {
   timeInput.step = "60";
   timeInput.className = "input";
 
+  const visitTypeLabelEl = el("label", undefined, "Формат приёма");
+  const visitTypeSelect = document.createElement("select");
+  visitTypeSelect.className = "input";
+  visitTypeSelect.required = true;
+  visitTypeSelect.append(
+    new Option("Выберите формат", ""),
+    new Option("Очный приём", "in_person"),
+    new Option("Видеоконсультация (Zoom)", "video"),
+  );
+
   const submit = document.createElement("button");
   submit.type = "submit";
   submit.className = "button primary";
@@ -280,7 +299,7 @@ function buildBookingContent(token: string): HTMLElement {
 
   const status = el("p", "status hidden");
 
-  form.append(dateLabel, dateInput, timeLabel, timeInput, submit, status);
+  form.append(dateLabel, dateInput, timeLabel, timeInput, visitTypeLabelEl, visitTypeSelect, submit, status);
 
   const listTitle = el("h2", "section-title", "Мои записи");
   const listHost = el("div", "list-host");
@@ -292,12 +311,23 @@ function buildBookingContent(token: string): HTMLElement {
     submit.setAttribute("disabled", "true");
 
     try {
-      await createAppointment(token, dateInput.value, timeInput.value);
+      const preferredVisitType = visitTypeSelect.value as "in_person" | "video" | "";
+      if (!preferredVisitType) {
+        status.textContent = "Выберите формат приёма.";
+        return;
+      }
+      await createAppointment(
+        token,
+        dateInput.value,
+        timeInput.value,
+        preferredVisitType,
+      );
       status.textContent = "Заявка отправлена. Администратор свяжется с вами.";
       const data = await listMyAppointments(token);
       listHost.replaceChildren(renderAppointmentsList(data.appointments));
       dateInput.value = "";
       timeInput.value = "";
+      visitTypeSelect.value = "";
     } catch (err) {
       status.textContent =
         err instanceof ApiError ? err.message : "Не удалось отправить заявку";
@@ -769,8 +799,7 @@ function buildSubmissionDetailContent(
   } else {
     const img = document.createElement("img");
     img.src = mediaUrl;
-    img.alt =
-      submission.media_type === "video" ? "Видео пациента" : "Фото пациента";
+    img.alt = "Фото пациента";
     img.className = "submission-photo";
     card.append(img);
   }
@@ -1206,8 +1235,12 @@ function renderDoctorAppointmentsList(
       el("p", undefined, patientName(a.patient)),
       el("p", "muted", statusLabel(a.status)),
     );
+    const preferenceLabel = visitTypeLabel(a.preferred_visit_type);
+    if (preferenceLabel) {
+      card.append(el("p", "muted", `Предпочтение пациента: ${preferenceLabel}`));
+    }
     const visitLabel = visitTypeLabel(a.visit_type);
-    if (visitLabel) {
+    if (visitLabel && a.status !== "pending") {
       card.append(el("p", "muted", visitLabel));
     }
     if (a.needs_zoom_link) {
@@ -1249,6 +1282,11 @@ function renderDoctorAppointmentOffer(
       shell.append(el("p", "muted", "Заявка уже обработана."));
     }
     return;
+  }
+
+  const preferenceLabel = visitTypeLabel(appointment.preferred_visit_type);
+  if (preferenceLabel) {
+    shell.append(el("p", "muted", `Предпочтение пациента: ${preferenceLabel}`));
   }
 
   const form = el("form", "card form");

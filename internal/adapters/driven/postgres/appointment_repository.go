@@ -13,7 +13,8 @@ import (
 )
 
 const appointmentSelectCols = `
-    a.id, a.user_id, a.preferred_date, a.preferred_time, a.status,
+    a.id, a.user_id, a.preferred_date, a.preferred_time,
+    COALESCE(a.preferred_visit_type, ''), a.status,
     COALESCE(a.visit_type, ''), COALESCE(a.zoom_link, ''), COALESCE(a.doctor_notes, ''),
     a.responded_by, a.offer_sent_at,
     a.reminder_1d_sent_at, a.reminder_1h_sent_at,
@@ -31,9 +32,10 @@ func NewAppointmentRepository(pool *pgxpool.Pool) *AppointmentRepository {
 
 func (r *AppointmentRepository) Create(ctx context.Context, appt booking.Appointment) (booking.Appointment, error) {
 	const q = `
-INSERT INTO appointments (user_id, preferred_date, preferred_time, status, created_at)
-VALUES ($1, $2::date, $3::time, $4, COALESCE($5, NOW()))
-RETURNING id, user_id, preferred_date, preferred_time, status,
+INSERT INTO appointments (user_id, preferred_date, preferred_time, preferred_visit_type, status, created_at)
+VALUES ($1, $2::date, $3::time, $4, $5, COALESCE($6, NOW()))
+RETURNING id, user_id, preferred_date, preferred_time,
+    COALESCE(preferred_visit_type, ''), status,
     COALESCE(visit_type, ''), COALESCE(zoom_link, ''), COALESCE(doctor_notes, ''),
     responded_by, offer_sent_at,
     reminder_1d_sent_at, reminder_1h_sent_at,
@@ -44,6 +46,7 @@ RETURNING id, user_id, preferred_date, preferred_time, status,
 		appt.UserID,
 		appt.PreferredDate,
 		formatTime(appt.PreferredTime),
+		appt.PreferredVisitType.String(),
 		appt.Status.String(),
 		appt.CreatedAt,
 	)
@@ -52,7 +55,8 @@ RETURNING id, user_id, preferred_date, preferred_time, status,
 
 func (r *AppointmentRepository) ListByUserID(ctx context.Context, userID int64) ([]booking.Appointment, error) {
 	const q = `
-SELECT id, user_id, preferred_date, preferred_time, status,
+SELECT id, user_id, preferred_date, preferred_time,
+    COALESCE(preferred_visit_type, ''), status,
     COALESCE(visit_type, ''), COALESCE(zoom_link, ''), COALESCE(doctor_notes, ''),
     responded_by, offer_sent_at,
     reminder_1d_sent_at, reminder_1h_sent_at,
@@ -301,6 +305,7 @@ func (r *AppointmentRepository) MarkReminderSent(
 func scanAppointmentWithPatient(row pgxRowScanner) (booking.AppointmentWithPatient, error) {
 	var item booking.AppointmentWithPatient
 	var status string
+	var preferredVisitType string
 	var visitType string
 	var prefTime time.Time
 	err := row.Scan(
@@ -308,6 +313,7 @@ func scanAppointmentWithPatient(row pgxRowScanner) (booking.AppointmentWithPatie
 		&item.Appointment.UserID,
 		&item.Appointment.PreferredDate,
 		&prefTime,
+		&preferredVisitType,
 		&status,
 		&visitType,
 		&item.Appointment.ZoomLink,
@@ -330,6 +336,7 @@ func scanAppointmentWithPatient(row pgxRowScanner) (booking.AppointmentWithPatie
 		return booking.AppointmentWithPatient{}, err
 	}
 	item.Appointment.Status = booking.Status(status)
+	item.Appointment.PreferredVisitType = booking.VisitType(preferredVisitType)
 	item.Appointment.VisitType = booking.VisitType(visitType)
 	item.Appointment.PreferredDate = truncateDateUTC(item.Appointment.PreferredDate)
 	item.Appointment.PreferredTime = time.Date(0, 1, 1, prefTime.Hour(), prefTime.Minute(), prefTime.Second(), 0, time.UTC)
@@ -339,6 +346,7 @@ func scanAppointmentWithPatient(row pgxRowScanner) (booking.AppointmentWithPatie
 func scanAppointment(row pgxRowScanner) (booking.Appointment, error) {
 	var appt booking.Appointment
 	var status string
+	var preferredVisitType string
 	var visitType string
 	var prefTime time.Time
 	err := row.Scan(
@@ -346,6 +354,7 @@ func scanAppointment(row pgxRowScanner) (booking.Appointment, error) {
 		&appt.UserID,
 		&appt.PreferredDate,
 		&prefTime,
+		&preferredVisitType,
 		&status,
 		&visitType,
 		&appt.ZoomLink,
@@ -363,6 +372,7 @@ func scanAppointment(row pgxRowScanner) (booking.Appointment, error) {
 		return booking.Appointment{}, err
 	}
 	appt.Status = booking.Status(status)
+	appt.PreferredVisitType = booking.VisitType(preferredVisitType)
 	appt.VisitType = booking.VisitType(visitType)
 	appt.PreferredDate = truncateDateUTC(appt.PreferredDate)
 	appt.PreferredTime = time.Date(0, 1, 1, prefTime.Hour(), prefTime.Minute(), prefTime.Second(), 0, time.UTC)

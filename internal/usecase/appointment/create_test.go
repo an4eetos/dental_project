@@ -32,15 +32,19 @@ func TestCreate_NotifiesDoctors(t *testing.T) {
 	}
 
 	appt, err := uc.Execute(context.Background(), CreateInput{
-		UserID:        10,
-		PreferredDate: "2026-06-10",
-		PreferredTime: "14:00",
+		UserID:             10,
+		PreferredDate:      "2026-06-10",
+		PreferredTime:      "14:00",
+		PreferredVisitType: "video",
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if appt.ID != 42 || appt.Status != booking.StatusPending {
 		t.Fatalf("appointment: %+v", appt)
+	}
+	if appt.PreferredVisitType != booking.VisitTypeVideo {
+		t.Fatalf("preferred visit type: %s", appt.PreferredVisitType)
 	}
 	if len(sender.messages) != 2 {
 		t.Fatalf("want 2 doctor notifications, got %d", len(sender.messages))
@@ -51,6 +55,9 @@ func TestCreate_NotifiesDoctors(t *testing.T) {
 		}
 		if !strings.Contains(sender.messages[i].text, "Новая заявка") {
 			t.Fatalf("message %d: %s", i, sender.messages[i].text)
+		}
+		if !strings.Contains(sender.messages[i].text, "Предпочтение пациента: Видеоконсультация") {
+			t.Fatalf("message %d missing preference: %s", i, sender.messages[i].text)
 		}
 	}
 }
@@ -69,9 +76,10 @@ func TestCreate_DoctorCannotBook(t *testing.T) {
 	}
 
 	_, err := uc.Execute(context.Background(), CreateInput{
-		UserID:        5,
-		PreferredDate: "2026-06-10",
-		PreferredTime: "14:00",
+		UserID:             5,
+		PreferredDate:      "2026-06-10",
+		PreferredTime:      "14:00",
+		PreferredVisitType: "in_person",
 	})
 	if !errors.Is(err, domainerrors.ErrForbidden) {
 		t.Fatalf("err = %v", err)
@@ -90,9 +98,10 @@ func TestCreate_InvalidDate(t *testing.T) {
 	}
 
 	_, err := uc.Execute(context.Background(), CreateInput{
-		UserID:        10,
-		PreferredDate: "2020-01-01",
-		PreferredTime: "14:00",
+		UserID:             10,
+		PreferredDate:      "2020-01-01",
+		PreferredTime:      "14:00",
+		PreferredVisitType: "in_person",
 	})
 	if !errors.Is(err, domainerrors.ErrInvalidPreferredDate) {
 		t.Fatalf("err = %v", err)

@@ -22,9 +22,10 @@ type Create struct {
 
 // CreateInput is the usecase input (raw strings validated in service layer).
 type CreateInput struct {
-	UserID        int64
-	PreferredDate string
-	PreferredTime string
+	UserID              int64
+	PreferredDate       string
+	PreferredTime       string
+	PreferredVisitType  string
 }
 
 func (uc *Create) Execute(ctx context.Context, in CreateInput) (booking.Appointment, error) {
@@ -45,13 +46,18 @@ func (uc *Create) Execute(ctx context.Context, in CreateInput) (booking.Appointm
 	if err != nil {
 		return booking.Appointment{}, err
 	}
+	preferredVisitType, err := bookingvalidate.ParsePreferredVisitType(in.PreferredVisitType)
+	if err != nil {
+		return booking.Appointment{}, err
+	}
 
 	appt := booking.Appointment{
-		UserID:        user.ID,
-		PreferredDate: date,
-		PreferredTime: slot,
-		Status:        booking.StatusPending,
-		CreatedAt:     now.UTC(),
+		UserID:             user.ID,
+		PreferredDate:      date,
+		PreferredTime:      slot,
+		PreferredVisitType: preferredVisitType,
+		Status:             booking.StatusPending,
+		CreatedAt:          now.UTC(),
 	}
 
 	created, err := uc.Appointments.Create(ctx, appt)
@@ -62,7 +68,12 @@ func (uc *Create) Execute(ctx context.Context, in CreateInput) (booking.Appointm
 	dateStr := date.Format(bookingvalidate.DateLayout)
 	timeStr := slot.Format(bookingvalidate.TimeLayout)
 	patientName := formatPatientName(user)
-	doctorMessage := bookingvalidate.FormatNewRequestDoctorMessage(patientName, dateStr, timeStr)
+	doctorMessage := bookingvalidate.FormatNewRequestDoctorMessage(
+		patientName,
+		dateStr,
+		timeStr,
+		preferredVisitType.String(),
+	)
 	for _, telegramID := range uc.Doctors.TelegramIDs() {
 		_ = uc.Sender.SendText(ctx, telegramID, doctorMessage)
 	}

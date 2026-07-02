@@ -8,7 +8,7 @@ import (
 func TestFormatVideoConfirmedMessage_WithAndWithoutZoom(t *testing.T) {
 	t.Parallel()
 
-	withZoom := FormatVideoConfirmedMessage("2026-06-10", "14:00", "https://zoom.us/j/1")
+	withZoom := FormatVideoConfirmedMessage("2026-06-10", "14:00", "https://zoom.us/j/1", "")
 	if !strings.Contains(withZoom, "https://zoom.us/j/1") {
 		t.Fatal("expected zoom link in message")
 	}
@@ -16,7 +16,7 @@ func TestFormatVideoConfirmedMessage_WithAndWithoutZoom(t *testing.T) {
 		t.Fatal("should not mention pending link when zoom is present")
 	}
 
-	withoutZoom := FormatVideoConfirmedMessage("2026-06-10", "14:00", "")
+	withoutZoom := FormatVideoConfirmedMessage("2026-06-10", "14:00", "", "")
 	if !strings.Contains(withoutZoom, "будет добавлена позже") {
 		t.Fatal("expected pending zoom notice")
 	}
@@ -25,8 +25,41 @@ func TestFormatVideoConfirmedMessage_WithAndWithoutZoom(t *testing.T) {
 func TestFormatInPersonConfirmedMessage(t *testing.T) {
 	t.Parallel()
 
-	msg := FormatInPersonConfirmedMessage("2026-06-10", "10:00", "Вход со двора")
+	msg := FormatInPersonConfirmedMessage("2026-06-10", "10:00", "Вход со двора", "")
 	if !strings.Contains(msg, "очный приём") || !strings.Contains(msg, "Вход со двора") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+}
+
+func TestFormatNewRequestDoctorMessage_IncludesPreference(t *testing.T) {
+	t.Parallel()
+
+	msg := FormatNewRequestDoctorMessage("Иван", "2026-06-10", "14:00", "video")
+	if !strings.Contains(msg, "Предпочтение пациента: Видеоконсультация") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+}
+
+func TestFormatInPersonConfirmedMessage_MismatchPreference(t *testing.T) {
+	t.Parallel()
+
+	msg := FormatInPersonConfirmedMessage("2026-06-10", "10:00", "", "video")
+	if !strings.Contains(msg, "Вы запрашивали видеоконсультацию") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+	if !strings.Contains(msg, "врач назначил очный приём") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+}
+
+func TestFormatVideoConfirmedMessage_MismatchPreference(t *testing.T) {
+	t.Parallel()
+
+	msg := FormatVideoConfirmedMessage("2026-06-10", "14:00", "", "in_person")
+	if !strings.Contains(msg, "Вы запрашивали очный приём") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+	if !strings.Contains(msg, "врач назначил видеоконсультацию") {
 		t.Fatalf("unexpected message: %s", msg)
 	}
 }

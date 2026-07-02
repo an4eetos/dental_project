@@ -111,11 +111,12 @@ func (uc *Respond) Execute(ctx context.Context, in RespondInput) (booking.Appoin
 	origTimeStr := item.Appointment.PreferredTime.Format(bookingvalidate.TimeLayout)
 
 	var message string
+	preferredVisitType := item.Appointment.PreferredVisitType.String()
 	switch decision {
 	case booking.DecisionInPerson:
-		message = bookingvalidate.FormatInPersonConfirmedMessage(dateStr, timeStr, doctorNotes)
+		message = bookingvalidate.FormatInPersonConfirmedMessage(dateStr, timeStr, doctorNotes, preferredVisitType)
 	case booking.DecisionVideo:
-		message = bookingvalidate.FormatVideoConfirmedMessage(dateStr, timeStr, zoomLink)
+		message = bookingvalidate.FormatVideoConfirmedMessage(dateStr, timeStr, zoomLink, preferredVisitType)
 	case booking.DecisionReject:
 		message = bookingvalidate.FormatRejectedMessage(origDateStr, origTimeStr, doctorNotes)
 	}

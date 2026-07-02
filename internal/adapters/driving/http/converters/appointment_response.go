@@ -8,14 +8,15 @@ import (
 )
 
 type AppointmentResponse struct {
-	ID            int64     `json:"id"`
-	PreferredDate string    `json:"preferred_date"`
-	PreferredTime string    `json:"preferred_time"`
-	Status        string    `json:"status"`
-	VisitType     string    `json:"visit_type,omitempty"`
-	ZoomLink      string    `json:"zoom_link,omitempty"`
-	DoctorNotes   string    `json:"doctor_notes,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                 int64     `json:"id"`
+	PreferredDate      string    `json:"preferred_date"`
+	PreferredTime      string    `json:"preferred_time"`
+	PreferredVisitType string    `json:"preferred_visit_type,omitempty"`
+	Status             string    `json:"status"`
+	VisitType          string    `json:"visit_type,omitempty"`
+	ZoomLink           string    `json:"zoom_link,omitempty"`
+	DoctorNotes        string    `json:"doctor_notes,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 func ToAppointmentResponse(a booking.Appointment) AppointmentResponse {
@@ -25,6 +26,9 @@ func ToAppointmentResponse(a booking.Appointment) AppointmentResponse {
 		PreferredTime: a.PreferredTime.Format(bookingvalidate.TimeLayout),
 		Status:        a.Status.String(),
 		CreatedAt:     a.CreatedAt.UTC(),
+	}
+	if a.PreferredVisitType.Valid() {
+		resp.PreferredVisitType = a.PreferredVisitType.String()
 	}
 	if a.VisitType.Valid() {
 		resp.VisitType = a.VisitType.String()

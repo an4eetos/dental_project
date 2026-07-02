@@ -7,6 +7,41 @@ import (
 
 const nonDiagnosticNotice = "\n\n⚠️ Онлайн-консультация носит информационный характер и не заменяет очный приём у стоматолога."
 
+// VisitTypeLabelRu returns a Russian label for a visit type.
+func VisitTypeLabelRu(visitType string) string {
+	switch visitType {
+	case "in_person":
+		return "Очный приём"
+	case "video":
+		return "Видеоконсультация"
+	default:
+		return ""
+	}
+}
+
+func preferenceMismatchLine(preferredVisitType, confirmedVisitType string) string {
+	if preferredVisitType == "" || preferredVisitType == confirmedVisitType {
+		return ""
+	}
+	preferred := visitTypeAccusativeRu(preferredVisitType)
+	confirmed := visitTypeAccusativeRu(confirmedVisitType)
+	if preferred == "" || confirmed == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n\nВы запрашивали %s — врач назначил %s.", preferred, confirmed)
+}
+
+func visitTypeAccusativeRu(visitType string) string {
+	switch visitType {
+	case "in_person":
+		return "очный приём"
+	case "video":
+		return "видеоконсультацию"
+	default:
+		return ""
+	}
+}
+
 func zoomSection(zoomLink string) string {
 	if strings.TrimSpace(zoomLink) != "" {
 		return fmt.Sprintf("\n\nСсылка на Zoom:\n%s", zoomLink)
@@ -15,22 +50,28 @@ func zoomSection(zoomLink string) string {
 }
 
 // FormatNewRequestDoctorMessage notifies doctors about a pending appointment.
-func FormatNewRequestDoctorMessage(patientName, date, timeStr string) string {
+func FormatNewRequestDoctorMessage(patientName, date, timeStr, preferredVisitType string) string {
+	preferenceLine := ""
+	if label := VisitTypeLabelRu(preferredVisitType); label != "" {
+		preferenceLine = fmt.Sprintf("\nПредпочтение пациента: %s", label)
+	}
 	return fmt.Sprintf(
-		"Новая заявка на приём.\n\nПациент: %s\nЗапрошено: %s в %s\n\nОткройте мини-приложение → вкладка «Записи», чтобы подтвердить, предложить видеоконсультацию или перенести.",
+		"Новая заявка на приём.\n\nПациент: %s\nЗапрошено: %s в %s%s\n\nОткройте мини-приложение → вкладка «Записи», чтобы подтвердить, предложить видеоконсультацию или перенести.",
 		patientName,
 		date,
 		timeStr,
+		preferenceLine,
 	)
 }
 
 // FormatInPersonConfirmedMessage builds the patient message for an in-person visit.
-func FormatInPersonConfirmedMessage(date, timeStr, notes string) string {
+func FormatInPersonConfirmedMessage(date, timeStr, notes, preferredVisitType string) string {
 	msg := fmt.Sprintf(
 		"Ваш очный приём подтверждён!\n\nДата: %s\nВремя: %s",
 		date,
 		timeStr,
 	)
+	msg += preferenceMismatchLine(preferredVisitType, "in_person")
 	if strings.TrimSpace(notes) != "" {
 		msg += fmt.Sprintf("\n\nКомментарий врача:\n%s", strings.TrimSpace(notes))
 	}
@@ -38,11 +79,12 @@ func FormatInPersonConfirmedMessage(date, timeStr, notes string) string {
 }
 
 // FormatVideoConfirmedMessage builds the patient message for a video consultation.
-func FormatVideoConfirmedMessage(date, timeStr, zoomLink string) string {
+func FormatVideoConfirmedMessage(date, timeStr, zoomLink, preferredVisitType string) string {
 	return fmt.Sprintf(
-		"Ваша видеоконсультация подтверждена!\n\nДата: %s\nВремя: %s%s%s",
+		"Ваша видеоконсультация подтверждена!\n\nДата: %s\nВремя: %s%s%s%s",
 		date,
 		timeStr,
+		preferenceMismatchLine(preferredVisitType, "video"),
 		zoomSection(zoomLink),
 		nonDiagnosticNotice,
 	)
@@ -159,7 +201,7 @@ func FormatDoctorReminderOneHour(patientName, date, timeStr, visitType, zoomLink
 
 // FormatOfferMessage is kept for backward compatibility in tests.
 func FormatOfferMessage(date, timeStr, zoomLink string) string {
-	return FormatVideoConfirmedMessage(date, timeStr, zoomLink)
+	return FormatVideoConfirmedMessage(date, timeStr, zoomLink, "")
 }
 
 // FormatReminderOneDayMessage is kept for backward compatibility.

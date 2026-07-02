@@ -53,6 +53,7 @@ export type Appointment = {
   id: number;
   preferred_date: string;
   preferred_time: string;
+  preferred_visit_type?: "in_person" | "video";
   status: string;
   visit_type?: "in_person" | "video";
   zoom_link?: string;
@@ -176,6 +177,7 @@ export async function createAppointment(
   token: string,
   preferredDate: string,
   preferredTime: string,
+  preferredVisitType: "in_person" | "video",
 ): Promise<Appointment> {
   return request<Appointment>("/appointments", {
     method: "POST",
@@ -183,6 +185,7 @@ export async function createAppointment(
     body: JSON.stringify({
       preferred_date: preferredDate,
       preferred_time: preferredTime,
+      preferred_visit_type: preferredVisitType,
     }),
   });
 }

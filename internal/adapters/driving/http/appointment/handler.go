@@ -22,8 +22,9 @@ type Handler struct {
 }
 
 type createAppointmentRequest struct {
-	PreferredDate string `json:"preferred_date" binding:"required"`
-	PreferredTime string `json:"preferred_time" binding:"required"`
+	PreferredDate      string `json:"preferred_date" binding:"required"`
+	PreferredTime      string `json:"preferred_time" binding:"required"`
+	PreferredVisitType string `json:"preferred_visit_type" binding:"required"`
 }
 
 type respondAppointmentRequest struct {
@@ -49,15 +50,16 @@ func (h *Handler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, httperrors.APIError{
 			Code:    "validation_error",
-			Message: "preferred_date and preferred_time are required",
+			Message: "preferred_date, preferred_time, and preferred_visit_type are required",
 		})
 		return
 	}
 
 	appt, err := h.CreateUC.Execute(c.Request.Context(), appointmentuc.CreateInput{
-		UserID:        userID,
-		PreferredDate: req.PreferredDate,
-		PreferredTime: req.PreferredTime,
+		UserID:             userID,
+		PreferredDate:      req.PreferredDate,
+		PreferredTime:      req.PreferredTime,
+		PreferredVisitType: req.PreferredVisitType,
 	})
 	if err != nil {
 		httperrors.Write(c, err)
